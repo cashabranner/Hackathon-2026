@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 
+import '../config/app_config.dart';
 import '../demo/demo_accounts.dart';
 import '../models/food_log.dart';
 import '../models/metabolic_state.dart';
+import '../models/nutrition_estimate.dart';
 import '../models/training_session.dart';
 import '../models/user_profile.dart';
 import '../services/food_parser.dart';
@@ -33,9 +35,7 @@ class AppState extends ChangeNotifier {
   bool get hasProfile => _profile != null;
 
   TrainingSession? get nextSession {
-    final upcoming = _sessions
-        .where((s) => s.plannedAt.isAfter(_now))
-        .toList()
+    final upcoming = _sessions.where((s) => s.plannedAt.isAfter(_now)).toList()
       ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
     return upcoming.isEmpty ? null : upcoming.first;
   }
@@ -73,19 +73,49 @@ class AppState extends ChangeNotifier {
 
   // ─── Food logging ─────────────────────────────────────────────────────────
 
-  void logFood(String rawInput) {
+  Future<void> logFood(
+    String rawInput, {
+    NutritionEstimate? nutrition,
+    String? source,
+  }) async {
     if (_profile == null) return;
-    final nutrition = FoodParser.parseText(
-      rawInput,
-      allergies: _profile!.allergies,
-    );
+
+    NutritionEstimate resolvedNutrition;
+    String resolvedSource;
+
+    if (nutrition != null) {
+      resolvedNutrition = nutrition;
+      resolvedSource = source ?? 'local_fallback';
+    } else if (AppConfig.hasRemoteFoodParser) {
+      try {
+        resolvedNutrition = await FoodParser.parseTextRemote(
+          rawInput,
+          AppConfig.foodParserUrl,
+          AppConfig.supabaseAnonKey,
+        );
+        resolvedSource = 'edge_function';
+      } catch (_) {
+        resolvedNutrition = FoodParser.parseText(
+          rawInput,
+          allergies: _profile!.allergies,
+        );
+        resolvedSource = 'local_fallback';
+      }
+    } else {
+      resolvedNutrition = FoodParser.parseText(
+        rawInput,
+        allergies: _profile!.allergies,
+      );
+      resolvedSource = 'local_fallback';
+    }
+
     final log = FoodLog(
       id: 'local-${DateTime.now().millisecondsSinceEpoch}',
       userId: _profile!.id,
       rawInput: rawInput,
       loggedAt: _now,
-      nutrition: nutrition,
-      source: 'local_fallback',
+      nutrition: resolvedNutrition,
+      source: resolvedSource,
     );
     _foodLogs = [..._foodLogs, log];
     _recompute();

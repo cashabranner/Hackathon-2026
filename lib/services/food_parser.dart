@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
 import '../models/nutrition_estimate.dart';
 
 /// Parses free-text food descriptions into NutritionEstimate.
@@ -45,7 +49,7 @@ class FoodParser {
     return keywords.isEmpty ? 0 : hits / keywords.length;
   }
 
-  /// Contract for future Supabase Edge Function integration.
+  /// Parse through the Supabase Edge Function when remote parsing is enabled.
   /// Input: free-text description (and optionally image metadata).
   /// Output: NutritionEstimate
   ///
@@ -72,10 +76,47 @@ class FoodParser {
     String edgeFunctionUrl,
     String anonKey,
   ) async {
-    // Real HTTP call would go here.
-    // For now, fall back to local parser.
-    return parseText(input);
+    final uri = Uri.parse(edgeFunctionUrl);
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      if (anonKey.isNotEmpty) 'apikey': anonKey,
+      if (anonKey.isNotEmpty) 'Authorization': 'Bearer $anonKey',
+    };
+
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode({'description': input}),
+    );
+
+    final decoded = jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = decoded is Map<String, dynamic>
+          ? decoded['detail'] ?? decoded['error'] ?? decoded
+          : response.body;
+      throw FoodParserException('Remote food parser failed: $detail');
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const FoodParserException(
+          'Remote food parser returned invalid JSON');
+    }
+
+    if (decoded['error'] != null) {
+      throw FoodParserException(
+          'Remote food parser failed: ${decoded['error']}');
+    }
+
+    return NutritionEstimate.fromJson(decoded);
   }
+}
+
+class FoodParserException implements Exception {
+  final String message;
+  const FoodParserException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 // ─── Local food database ─────────────────────────────────────────────────────

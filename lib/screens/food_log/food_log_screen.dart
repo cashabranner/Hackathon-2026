@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/app_config.dart';
 import '../../models/food_log.dart';
 import '../../models/nutrition_estimate.dart';
 import '../../repositories/app_state.dart';
@@ -18,6 +19,9 @@ class FoodLogScreen extends StatefulWidget {
 class _FoodLogScreenState extends State<FoodLogScreen> {
   final _inputCtrl = TextEditingController();
   NutritionEstimate? _preview;
+  String _previewSource = 'local_fallback';
+  bool _isParsing = false;
+  bool _isLogging = false;
   bool _showPreview = false;
 
   @override
@@ -26,24 +30,70 @@ class _FoodLogScreenState extends State<FoodLogScreen> {
     super.dispose();
   }
 
-  void _parseInput() {
+  Future<void> _parseInput() async {
     final text = _inputCtrl.text.trim();
-    if (text.isEmpty) return;
-    final est = FoodParser.parseText(text);
+    if (text.isEmpty || _isParsing || _isLogging) return;
+
     setState(() {
-      _preview = est;
+      _isParsing = true;
+      _showPreview = false;
+    });
+
+    var source = 'local_fallback';
+    late NutritionEstimate estimate;
+    try {
+      if (AppConfig.hasRemoteFoodParser) {
+        estimate = await FoodParser.parseTextRemote(
+          text,
+          AppConfig.foodParserUrl,
+          AppConfig.supabaseAnonKey,
+        );
+        source = 'edge_function';
+      } else {
+        estimate = FoodParser.parseText(text);
+      }
+    } catch (_) {
+      estimate = FoodParser.parseText(text);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Using local estimate for now'),
+            backgroundColor: AppTheme.amber,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _preview = estimate;
+      _previewSource = source;
       _showPreview = true;
+      _isParsing = false;
     });
   }
 
-  void _confirmLog() {
+  Future<void> _confirmLog() async {
     final text = _inputCtrl.text.trim();
-    if (text.isEmpty) return;
-    context.read<AppState>().logFood(text);
+    final preview = _preview;
+    if (text.isEmpty || preview == null || _isLogging) return;
+
+    setState(() => _isLogging = true);
+
+    await context.read<AppState>().logFood(
+          text,
+          nutrition: preview,
+          source: _previewSource,
+        );
+
+    if (!mounted) return;
     _inputCtrl.clear();
     setState(() {
       _preview = null;
+      _previewSource = 'local_fallback';
       _showPreview = false;
+      _isLogging = false;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -72,6 +122,9 @@ class _FoodLogScreenState extends State<FoodLogScreen> {
           _InputSection(
             ctrl: _inputCtrl,
             preview: _showPreview ? _preview : null,
+            previewSource: _previewSource,
+            isParsing: _isParsing,
+            isLogging: _isLogging,
             onParse: _parseInput,
             onConfirm: _confirmLog,
             onClearPreview: () => setState(() => _showPreview = false),
@@ -98,6 +151,9 @@ class _FoodLogScreenState extends State<FoodLogScreen> {
 class _InputSection extends StatelessWidget {
   final TextEditingController ctrl;
   final NutritionEstimate? preview;
+  final String previewSource;
+  final bool isParsing;
+  final bool isLogging;
   final VoidCallback onParse;
   final VoidCallback onConfirm;
   final VoidCallback onClearPreview;
@@ -105,6 +161,9 @@ class _InputSection extends StatelessWidget {
   const _InputSection({
     required this.ctrl,
     required this.preview,
+    required this.previewSource,
+    required this.isParsing,
+    required this.isLogging,
     required this.onParse,
     required this.onConfirm,
     required this.onClearPreview,
@@ -123,15 +182,25 @@ class _InputSection extends StatelessWidget {
                 child: TextField(
                   controller: ctrl,
                   decoration: InputDecoration(
-                    hintText:
-                        'e.g. two eggs, oatmeal with blueberries, coffee',
+                    hintText: 'e.g. two eggs, oatmeal with blueberries, coffee',
                     hintStyle: const TextStyle(color: Colors.white30),
                     suffixIcon: IconButton(
-                      icon: const Icon(Icons.search, color: AppTheme.teal),
-                      onPressed: onParse,
+                      icon: isParsing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppTheme.teal,
+                              ),
+                            )
+                          : const Icon(Icons.search, color: AppTheme.teal),
+                      onPressed: isParsing || isLogging ? null : onParse,
                     ),
                   ),
-                  onSubmitted: (_) => onParse(),
+                  onSubmitted: (_) {
+                    if (!isParsing && !isLogging) onParse();
+                  },
                   textInputAction: TextInputAction.search,
                 ),
               ),
@@ -141,6 +210,8 @@ class _InputSection extends StatelessWidget {
             const SizedBox(height: 12),
             _NutritionPreviewCard(
               estimate: preview!,
+              source: previewSource,
+              isLogging: isLogging,
               onConfirm: onConfirm,
               onDismiss: onClearPreview,
             ),
@@ -153,11 +224,15 @@ class _InputSection extends StatelessWidget {
 
 class _NutritionPreviewCard extends StatelessWidget {
   final NutritionEstimate estimate;
+  final String source;
+  final bool isLogging;
   final VoidCallback onConfirm;
   final VoidCallback onDismiss;
 
   const _NutritionPreviewCard({
     required this.estimate,
+    required this.source,
+    required this.isLogging,
     required this.onConfirm,
     required this.onDismiss,
   });
@@ -185,18 +260,18 @@ class _NutritionPreviewCard extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.close, size: 18, color: Colors.white38),
-                onPressed: onDismiss,
+                onPressed: isLogging ? null : onDismiss,
               ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              _NutrientBadge('Carbs', '${estimate.carbsG.round()}g',
-                  AppTheme.teal),
+              _NutrientBadge(
+                  'Carbs', '${estimate.carbsG.round()}g', AppTheme.teal),
               const SizedBox(width: 8),
-              _NutrientBadge('Protein', '${estimate.proteinG.round()}g',
-                  AppTheme.amber),
+              _NutrientBadge(
+                  'Protein', '${estimate.proteinG.round()}g', AppTheme.amber),
               const SizedBox(width: 8),
               _NutrientBadge(
                   'Fat', '${estimate.fatG.round()}g', AppTheme.coral),
@@ -210,19 +285,23 @@ class _NutritionPreviewCard extends StatelessWidget {
             'Glucose: ${estimate.glucoseG.round()}g · Fructose: ${estimate.fructoseG.round()}g · Fiber: ${estimate.fiberG.round()}g',
             style: const TextStyle(color: Colors.white38, fontSize: 12),
           ),
+          const SizedBox(height: 4),
+          Text(
+            source == 'edge_function' ? 'AI estimate' : 'Local estimate',
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
           if (estimate.isHighFat || estimate.isHighFiber) ...[
             const SizedBox(height: 4),
             Text(
               '⏳ Slower absorption expected'
               '${estimate.isHighFat ? " (high fat)" : ""}'
               '${estimate.isHighFiber ? " (high fiber)" : ""}',
-              style: const TextStyle(
-                  color: AppTheme.amber, fontSize: 12),
+              style: const TextStyle(color: AppTheme.amber, fontSize: 12),
             ),
           ],
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: onConfirm,
+            onPressed: isLogging ? null : onConfirm,
             child: const Text('Log this food ✓'),
           ),
         ],
@@ -245,8 +324,7 @@ class _NutrientBadge extends StatelessWidget {
             style: TextStyle(
                 color: color, fontSize: 14, fontWeight: FontWeight.w700)),
         Text(label,
-            style:
-                const TextStyle(color: Colors.white38, fontSize: 10)),
+            style: const TextStyle(color: Colors.white38, fontSize: 10)),
       ],
     );
   }
@@ -289,8 +367,7 @@ class _FoodLogTile extends StatelessWidget {
       },
       onDismissed: (_) => appState.deleteFoodLog(log.id),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
         leading: Container(
           width: 42,
           height: 42,
