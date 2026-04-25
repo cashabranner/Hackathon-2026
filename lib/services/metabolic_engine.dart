@@ -29,8 +29,7 @@ class MetabolicEngine {
   static double liverCapacityG(UserProfile p) => 100.0;
 
   /// Muscle glycogen capacity ≈ 15 g/kg lean mass.
-  static double muscleCapacityG(UserProfile p) =>
-      15.0 * leanBodyMassKg(p);
+  static double muscleCapacityG(UserProfile p) => 15.0 * leanBodyMassKg(p);
 
   // ─── Compute a baseline (morning-fasted) metabolic state ────────────────
 
@@ -90,9 +89,7 @@ class MetabolicEngine {
       for (final s in sessions)
         if (!s.plannedAt.isBefore(dayStart) &&
             !s.plannedAt.isAfter(now) &&
-            s.plannedAt
-                .add(Duration(minutes: s.durationMinutes))
-                .isBefore(now))
+            s.plannedAt.add(Duration(minutes: s.durationMinutes)).isBefore(now))
           _SessionEvent(s.plannedAt, s),
     ]..sort((a, b) => a.time.compareTo(b.time));
 
@@ -135,8 +132,7 @@ class MetabolicEngine {
 
   static const double _restingLiverDepleteGPerHr = 7.0; // 5–10 g/hr midpoint
 
-  static MetabolicState _applyRestingDepletion(
-      MetabolicState s, double hours) {
+  static MetabolicState _applyRestingDepletion(MetabolicState s, double hours) {
     final depleted = (s.liverGlycogenG - _restingLiverDepleteGPerHr * hours)
         .clamp(0.0, s.liverCapacityG);
     final phase = depleted < s.liverCapacityG * 0.2
@@ -167,12 +163,12 @@ class MetabolicEngine {
     final liverDeficit = s.liverCapacityG - s.liverGlycogenG;
     final toLiver = (glucose + n.fructoseG).clamp(0.0, liverDeficit);
 
-    final newMuscle = (s.muscleGlycogenG + toMuscle).clamp(0, s.muscleCapacityG);
-    final newLiver = (s.liverGlycogenG + toLiver).clamp(0, s.liverCapacityG);
+    final newMuscle =
+        (s.muscleGlycogenG + toMuscle).clamp(0.0, s.muscleCapacityG);
+    final newLiver = (s.liverGlycogenG + toLiver).clamp(0.0, s.liverCapacityG);
 
-    final phase = n.carbsG > 20
-        ? BloodGlucosePhase.postPrandial
-        : s.bloodGlucosePhase;
+    final phase =
+        n.carbsG > 20 ? BloodGlucosePhase.postPrandial : s.bloodGlucosePhase;
 
     return s.copyWith(
       muscleGlycogenG: newMuscle,
@@ -205,7 +201,7 @@ class MetabolicEngine {
 
   static double _bgProxy(MetabolicState s) {
     // 0–100 index mapping liver fill % → rough blood glucose proxy
-    return (s.liverFillPct * 80 + 10).clamp(0, 100);
+    return (s.liverFillPct * 80 + 10).clamp(0.0, 100.0);
   }
 }
 

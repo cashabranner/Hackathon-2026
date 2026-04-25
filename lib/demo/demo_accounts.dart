@@ -1,12 +1,16 @@
 import '../models/food_log.dart';
-import '../models/nutrition_estimate.dart';
 import '../models/training_session.dart';
 import '../models/user_profile.dart';
 
 /// Seeded judge scenarios for the hackathon demo.
 /// Select a demo account from the onboarding screen to preload a day.
 class DemoAccounts {
-  static final all = [_fastedMorning, _midDayPartial, _preLiftFueled, _postLift];
+  static final all = [
+    _fastedMorning,
+    _midDayPartial,
+    _preLiftFueled,
+    _postLift
+  ];
 
   // ─── 1. Fasted morning athlete ─────────────────────────────────────────
 
@@ -124,7 +128,12 @@ class DemoAccounts {
           'protein_g': 32,
           'fat_g': 6,
           'calories': 462,
-          'micros': {'magnesium_mg': 120, 'potassium_mg': 600, 'b12_mcg': 1.2, 'iron_mg': 3},
+          'micros': {
+            'magnesium_mg': 120,
+            'potassium_mg': 600,
+            'b12_mcg': 1.2,
+            'iron_mg': 3
+          },
           'is_high_fat': false,
           'is_high_fiber': true,
         },
@@ -145,7 +154,12 @@ class DemoAccounts {
           'protein_g': 48,
           'fat_g': 5,
           'calories': 533,
-          'micros': {'magnesium_mg': 52, 'potassium_mg': 989, 'zinc_mg': 3.4, 'b12_mcg': 0.5},
+          'micros': {
+            'magnesium_mg': 52,
+            'potassium_mg': 989,
+            'zinc_mg': 3.4,
+            'b12_mcg': 0.5
+          },
           'is_high_fat': false,
           'is_high_fiber': false,
         },

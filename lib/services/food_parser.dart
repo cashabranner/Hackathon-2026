@@ -1,5 +1,4 @@
 import '../models/nutrition_estimate.dart';
-import '../models/user_profile.dart';
 
 /// Parses free-text food descriptions into NutritionEstimate.
 /// Uses a local keyword database for demo. When Supabase Edge Function
@@ -132,8 +131,8 @@ const _foodDatabase = [
       fatG: 10,
       calories: 143,
       isHighFat: true,
-      micros: MicroNutrients(
-          b12Mcg: 1.1, ironMg: 1.8, zincMg: 1.3, vitaminDIu: 82),
+      micros:
+          MicroNutrients(b12Mcg: 1.1, ironMg: 1.8, zincMg: 1.3, vitaminDIu: 82),
     ),
   ),
   _FoodEntry(

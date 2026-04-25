@@ -22,7 +22,7 @@ class AppTheme {
         onSurface: Colors.white,
       ),
       scaffoldBackgroundColor: surface,
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surfaceCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -60,8 +60,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
-              fontWeight: FontWeight.w700, fontSize: 16),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -72,8 +71,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
-              fontWeight: FontWeight.w700, fontSize: 16),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       textTheme: base.textTheme.copyWith(
@@ -88,13 +86,9 @@ class AppTheme {
             fontSize: 24,
             letterSpacing: -0.3),
         titleLarge: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 18),
+            color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
         titleMedium: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 16),
+            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
         bodyLarge: TextStyle(color: Colors.white.withAlpha(220), fontSize: 15),
         bodyMedium: TextStyle(color: Colors.white.withAlpha(180), fontSize: 14),
         labelLarge: const TextStyle(

@@ -29,7 +29,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final Set<String> _allergies = {};
   bool _usesGlp1 = false;
 
-  final _commonAllergies = ['Gluten', 'Dairy', 'Nuts', 'Soy', 'Eggs', 'Shellfish'];
+  final _commonAllergies = [
+    'Gluten',
+    'Dairy',
+    'Nuts',
+    'Soy',
+    'Eggs',
+    'Shellfish'
+  ];
 
   @override
   void dispose() {
@@ -77,10 +84,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 controller: _pageCtrl,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  _DemoPickerPage(onDemoPicked: (demo) {
-                    context.read<AppState>().loadDemoAccount(demo);
-                    context.go('/dashboard');
-                  }, onContinue: _next),
+                  _DemoPickerPage(
+                      onDemoPicked: (demo) {
+                        context.read<AppState>().loadDemoAccount(demo);
+                        context.go('/dashboard');
+                      },
+                      onContinue: _next),
                   _BiometricsPage(
                     nameCtrl: _nameCtrl,
                     age: _age,
@@ -152,9 +161,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   margin: const EdgeInsets.only(right: 6),
                   height: 3,
                   decoration: BoxDecoration(
-                    color: i <= _page
-                        ? AppTheme.teal
-                        : AppTheme.surfaceCard,
+                    color: i <= _page ? AppTheme.teal : AppTheme.surfaceCard,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -174,8 +181,7 @@ class _DemoPickerPage extends StatelessWidget {
   final void Function(DemoAccount) onDemoPicked;
   final VoidCallback onContinue;
 
-  const _DemoPickerPage(
-      {required this.onDemoPicked, required this.onContinue});
+  const _DemoPickerPage({required this.onDemoPicked, required this.onContinue});
 
   @override
   Widget build(BuildContext context) {
@@ -234,8 +240,7 @@ class _DemoCard extends StatelessWidget {
                   color: AppTheme.teal.withAlpha(30),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child:
-                    const Icon(Icons.person, color: AppTheme.teal, size: 24),
+                child: const Icon(Icons.person, color: AppTheme.teal, size: 24),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -314,8 +319,7 @@ class _BiometricsPage extends StatelessWidget {
           SegmentedButton<BiologicalSex>(
             segments: const [
               ButtonSegment(value: BiologicalSex.male, label: Text('Male')),
-              ButtonSegment(
-                  value: BiologicalSex.female, label: Text('Female')),
+              ButtonSegment(value: BiologicalSex.female, label: Text('Female')),
             ],
             selected: {sex},
             onSelectionChanged: (s) => onSexChanged(s.first),
@@ -411,14 +415,22 @@ class _PreferencesPage extends StatelessWidget {
           Text('Activity baseline',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 10),
-          ..._activityLabels.entries.map((e) => RadioListTile<ActivityBaseline>(
-                title: Text(e.value,
-                    style: Theme.of(context).textTheme.bodyMedium),
-                value: e.key,
-                groupValue: activity,
-                activeColor: AppTheme.teal,
-                onChanged: (v) => v != null ? onActivityChanged(v) : null,
-              )),
+          RadioGroup<ActivityBaseline>(
+            groupValue: activity,
+            onChanged: (v) {
+              if (v != null) onActivityChanged(v);
+            },
+            child: Column(
+              children: _activityLabels.entries
+                  .map((e) => RadioListTile<ActivityBaseline>(
+                        title: Text(e.value,
+                            style: Theme.of(context).textTheme.bodyMedium),
+                        value: e.key,
+                        activeColor: AppTheme.teal,
+                      ))
+                  .toList(),
+            ),
+          ),
           const SizedBox(height: 20),
           Text('Allergies / restrictions',
               style: Theme.of(context).textTheme.titleMedium),
@@ -441,11 +453,12 @@ class _PreferencesPage extends StatelessWidget {
             subtitle: const Text(
                 'e.g. semaglutide, tirzepatide — affects gastric emptying'),
             value: usesGlp1,
-            activeColor: AppTheme.teal,
+            activeThumbColor: AppTheme.teal,
             onChanged: onGlp1Changed,
           ),
           const SizedBox(height: 28),
-          FilledButton(onPressed: onFinish, child: const Text('Start FuelWindow')),
+          FilledButton(
+              onPressed: onFinish, child: const Text('Start FuelWindow')),
         ],
       ),
     );

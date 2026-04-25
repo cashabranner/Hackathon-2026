@@ -20,8 +20,8 @@ class PrescriptionEngine {
     final urgentRefuel = muscleAfterSession < state.muscleCapacityG * 0.2;
 
     return switch (timing) {
-      PrescriptionTiming.preLift =>
-        _buildPreLift(state, session, hoursUntil, isLiverLow, isMuscleLow, urgentRefuel),
+      PrescriptionTiming.preLift => _buildPreLift(
+          state, session, hoursUntil, isLiverLow, isMuscleLow, urgentRefuel),
       PrescriptionTiming.immediatelyPre =>
         _buildImmediatelyPre(state, session, isLiverLow, urgentRefuel),
       PrescriptionTiming.postLift =>
@@ -49,8 +49,8 @@ class PrescriptionEngine {
     bool isMuscleLow,
     bool urgentRefuel,
   ) {
-    final targetCarbs = isMuscleLow ? 60.0 : (isLiverLow ? 40.0 : 30.0);
-    final targetProtein = 20.0;
+    final targetCarbs = isMuscleLow || isLiverLow ? 60.0 : 30.0;
+    const targetProtein = 20.0;
 
     final pre = <FuelItem>[
       FuelItem(
@@ -76,8 +76,7 @@ class PrescriptionEngine {
       generatedAt: state.asOf,
       session: session,
       timing: PrescriptionTiming.preLift,
-      headline:
-          '${hoursUntil.toStringAsFixed(1)}h to lift — load carbs now',
+      headline: '${hoursUntil.toStringAsFixed(1)}h to lift — load carbs now',
       summary: isMuscleLow
           ? 'Your muscle glycogen is low (${state.muscleFillPct * 100 ~/ 1}% full). '
               'Eat ${targetCarbs.round()}g carbs now to give digestion time.'
@@ -118,8 +117,7 @@ class PrescriptionEngine {
       pre.add(FuelItem(
         name: 'Sports drink (16 oz)',
         carbsG: 28,
-        rationale:
-            'Your liver is running low; exogenous glucose spares liver '
+        rationale: 'Your liver is running low; exogenous glucose spares liver '
             'output and maintains blood glucose during training.',
       ));
     }
@@ -130,8 +128,7 @@ class PrescriptionEngine {
       session: session,
       timing: PrescriptionTiming.immediatelyPre,
       headline: 'Under 45 min to lift — quick carbs only',
-      summary:
-          'Skip heavy food; a banana or gel now means readily available '
+      summary: 'Skip heavy food; a banana or gel now means readily available '
           'glucose without GI discomfort.',
       preLiftMeals: pre,
       duringLiftFuels: _duringFuels(session),
@@ -232,18 +229,16 @@ class PrescriptionEngine {
     ];
   }
 
-  static List<FuelItem> _postLiftItems(
-      MetabolicState state, bool urgent) {
+  static List<FuelItem> _postLiftItems(MetabolicState state, bool urgent) {
     final carbsG = urgent ? 80.0 : 60.0;
-    final proteinG = 30.0;
+    const proteinG = 30.0;
 
     return [
       FuelItem(
         name: 'White rice + chicken or tuna (${carbsG.round()}g carbs)',
         carbsG: carbsG,
         proteinG: proteinG,
-        rationale:
-            'Fast-digesting starch maximises glycogen resynthesis. Lean '
+        rationale: 'Fast-digesting starch maximises glycogen resynthesis. Lean '
             'protein delivers all essential amino acids for muscle repair.',
       ),
       FuelItem(
@@ -251,8 +246,7 @@ class PrescriptionEngine {
         carbsG: 26,
         proteinG: 8,
         fatG: 5,
-        rationale:
-            'A convenient 3:1 carb:protein ratio with electrolytes; '
+        rationale: 'A convenient 3:1 carb:protein ratio with electrolytes; '
             'well-studied for recovery in endurance and resistance athletes.',
       ),
     ];

@@ -88,12 +88,12 @@ void main() {
   });
 
   group('Food partitioning', () {
-    late FoodLog _glucoseLog;
-    late FoodLog _fructoseLog;
-    late FoodLog _fatHeavyLog;
+    late FoodLog glucoseLog;
+    late FoodLog fructoseLog;
+    late FoodLog fatHeavyLog;
 
     setUp(() {
-      _glucoseLog = FoodLog(
+      glucoseLog = FoodLog(
         id: 'g1',
         userId: 'test-m',
         rawInput: 'white rice',
@@ -113,7 +113,7 @@ void main() {
         ),
       );
 
-      _fructoseLog = FoodLog(
+      fructoseLog = FoodLog(
         id: 'f1',
         userId: 'test-m',
         rawInput: 'apple',
@@ -132,7 +132,7 @@ void main() {
         ),
       );
 
-      _fatHeavyLog = FoodLog(
+      fatHeavyLog = FoodLog(
         id: 'h1',
         userId: 'test-m',
         rawInput: 'nut butter',
@@ -156,7 +156,7 @@ void main() {
       final before = MetabolicEngine.computeBaseline(_male75);
       final after = MetabolicEngine.replayDay(
         _male75,
-        [_glucoseLog],
+        [glucoseLog],
         [],
         DateTime(2026, 4, 25, 9),
       );
@@ -169,19 +169,24 @@ void main() {
     test('Fructose preferentially loads liver', () {
       final withFructose = MetabolicEngine.replayDay(
         _male75,
-        [_fructoseLog],
+        [fructoseLog],
         [],
         DateTime(2026, 4, 25, 10),
       );
-      // Liver should be higher than baseline fasted state
-      final baseline = MetabolicEngine.computeBaseline(_male75);
-      expect(withFructose.liverGlycogenG, greaterThan(baseline.liverGlycogenG));
+      // Liver should be higher than the same-time no-food state.
+      final noFood = MetabolicEngine.replayDay(
+        _male75,
+        [],
+        [],
+        DateTime(2026, 4, 25, 10),
+      );
+      expect(withFructose.liverGlycogenG, greaterThan(noFood.liverGlycogenG));
     });
 
     test('High-fat meal applies 50% absorption reduction', () {
       final withFat = MetabolicEngine.replayDay(
         _male75,
-        [_fatHeavyLog],
+        [fatHeavyLog],
         [],
         DateTime(2026, 4, 25, 11),
       );
@@ -192,12 +197,14 @@ void main() {
     test('Total carbs accumulate correctly', () {
       final after = MetabolicEngine.replayDay(
         _male75,
-        [_glucoseLog, _fructoseLog],
+        [glucoseLog, fructoseLog],
         [],
         DateTime(2026, 4, 25, 10),
       );
-      expect(after.totalCarbsG,
-          closeTo(_glucoseLog.nutrition.carbsG + _fructoseLog.nutrition.carbsG, 0.1));
+      expect(
+          after.totalCarbsG,
+          closeTo(
+              glucoseLog.nutrition.carbsG + fructoseLog.nutrition.carbsG, 0.1));
     });
   });
 
@@ -230,10 +237,10 @@ void main() {
   });
 
   group('Training depletion', () {
-    late TrainingSession _legDay;
+    late TrainingSession legDay;
 
     setUp(() {
-      _legDay = TrainingSession(
+      legDay = TrainingSession(
         id: 'sess1',
         userId: 'test-m',
         type: SessionType.legs,
@@ -253,10 +260,11 @@ void main() {
       final withTraining = MetabolicEngine.replayDay(
         _male75,
         [],
-        [_legDay],
+        [legDay],
         DateTime(2026, 4, 25, 11, 30),
       );
-      expect(withTraining.muscleGlycogenG, lessThan(noTraining.muscleGlycogenG));
+      expect(
+          withTraining.muscleGlycogenG, lessThan(noTraining.muscleGlycogenG));
     });
 
     test('Training depletion estimate is within session cost', () {
@@ -269,13 +277,13 @@ void main() {
       final after = MetabolicEngine.replayDay(
         _male75,
         [],
-        [_legDay],
+        [legDay],
         DateTime(2026, 4, 25, 11, 1),
       );
       final depleted = before.muscleGlycogenG - after.muscleGlycogenG;
       // Allow resting depletion on top of session cost
       expect(depleted, greaterThan(0));
-      expect(depleted, lessThan(_legDay.estimatedMuscleGlycogenCostG + 30));
+      expect(depleted, lessThan(legDay.estimatedMuscleGlycogenCostG + 30));
     });
 
     test('Muscle glycogen never goes below zero', () {

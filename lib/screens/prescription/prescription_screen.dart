@@ -38,8 +38,7 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
       );
     }
 
-    final whyText = ExplanationService.explainPrescription(
-        rx, ms, rx.session);
+    final whyText = ExplanationService.explainPrescription(rx, ms, rx.session);
 
     return Scaffold(
       appBar: AppBar(
@@ -100,8 +99,8 @@ class _HeaderCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: _timingColor(rx.timing).withAlpha(30),
                     borderRadius: BorderRadius.circular(8),
@@ -119,13 +118,12 @@ class _HeaderCard extends StatelessWidget {
                 if (rx.urgentRefuel) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppTheme.coral.withAlpha(30),
                       borderRadius: BorderRadius.circular(8),
-                      border:
-                          Border.all(color: AppTheme.coral.withAlpha(100)),
+                      border: Border.all(color: AppTheme.coral.withAlpha(100)),
                     ),
                     child: const Text(
                       '⚠ URGENT REFUEL',
@@ -142,25 +140,17 @@ class _HeaderCard extends StatelessWidget {
             Text(rx.headline,
                 style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
-            Text(rx.summary,
-                style: Theme.of(context).textTheme.bodyLarge),
+            Text(rx.summary, style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 16),
             Row(
               children: [
-                _TargetChip(
-                    'Target carbs',
-                    '${rx.targetCarbsG.round()}g',
+                _TargetChip('Target carbs', '${rx.targetCarbsG.round()}g',
                     AppTheme.teal),
                 const SizedBox(width: 10),
-                _TargetChip(
-                    'Target protein',
-                    '${rx.targetProteinG.round()}g',
+                _TargetChip('Target protein', '${rx.targetProteinG.round()}g',
                     AppTheme.amber),
                 const SizedBox(width: 10),
-                _TargetChip(
-                    'Session',
-                    rx.session.displayName,
-                    Colors.white38),
+                _TargetChip('Session', rx.session.displayName, Colors.white38),
               ],
             ),
           ],
@@ -292,12 +282,12 @@ class _FuelItemCardState extends State<_FuelItemCard> {
               Row(
                 children: [
                   if (widget.item.carbsG > 0)
-                    _MacroBadge('${widget.item.carbsG.round()}g C',
-                        AppTheme.teal),
+                    _MacroBadge(
+                        '${widget.item.carbsG.round()}g C', AppTheme.teal),
                   if (widget.item.proteinG > 0) ...[
                     const SizedBox(width: 6),
-                    _MacroBadge('${widget.item.proteinG.round()}g P',
-                        AppTheme.amber),
+                    _MacroBadge(
+                        '${widget.item.proteinG.round()}g P', AppTheme.amber),
                   ],
                   if (widget.item.fatG > 0) ...[
                     const SizedBox(width: 6),
@@ -395,8 +385,7 @@ class _WhyCard extends StatelessWidget {
                   const Spacer(),
                   Text(
                     isExpanded ? 'Collapse' : 'The physiology behind this',
-                    style: const TextStyle(
-                        color: AppTheme.teal, fontSize: 13),
+                    style: const TextStyle(color: AppTheme.teal, fontSize: 13),
                   ),
                   Icon(
                     isExpanded
@@ -443,7 +432,8 @@ class _Disclaimer extends StatelessWidget {
           Expanded(
             child: Text(
               'These are informed physiology estimates, not medical-grade precision or clinical recommendations.',
-              style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+              style:
+                  TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
             ),
           ),
         ],
@@ -500,7 +490,7 @@ class _GlossaryCardState extends State<_GlossaryCard> {
               ),
               if (_expanded) ...[
                 const SizedBox(height: 12),
-                ..._GlossaryCard._terms.map((t) => _GlossaryEntry(title: t.$1, text: t.$2)),
+                ..._terms.map((t) => _GlossaryEntry(title: t.$1, text: t.$2)),
               ],
             ],
           ),
