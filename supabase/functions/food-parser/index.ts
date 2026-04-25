@@ -1,8 +1,8 @@
 // FuelWindow Edge Function: food-parser
-// Deploy: supabase functions deploy food-parser
+// Deploy: supabase functions deploy food-parser --no-verify-jwt
 //
 // Request  POST /functions/v1/food-parser
-// Headers: Authorization: Bearer <anon_key>
+// Requires Edge Function secret: OPENAI_API_KEY
 // Body: { "description": string, "image_url"?: string }
 //
 // Response:
@@ -99,11 +99,29 @@ Be as accurate as possible using USDA FoodData Central values. If multiple foods
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: 500,
+        response_format: { type: "json_object" },
       }),
     });
 
     const aiResult = await response.json();
+    if (!response.ok) {
+      return new Response(
+        JSON.stringify({
+          error: "OpenAI request failed",
+          status: response.status,
+          detail: aiResult.error?.message ?? aiResult,
+        }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const content = aiResult.choices?.[0]?.message?.content ?? "";
+    if (!content.trim()) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI returned an empty response" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Strip markdown code fences if present
     const cleaned = content.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();

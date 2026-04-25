@@ -2,11 +2,11 @@
 -- Run via: supabase db push (or paste into SQL Editor)
 
 -- ─── Enable UUID extension ─────────────────────────────────────────────────
-create extension if not exists "uuid-ossp";
+create extension if not exists "pgcrypto";
 
 -- ─── Profiles ──────────────────────────────────────────────────────────────
 create table if not exists profiles (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   user_id       uuid references auth.users(id) on delete cascade,
   name          text not null default '',
   age_years     int  not null,
@@ -29,7 +29,7 @@ create policy "Users own their profile" on profiles
 
 -- ─── Food logs ─────────────────────────────────────────────────────────────
 create table if not exists food_logs (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   user_id     uuid references auth.users(id) on delete cascade,
   raw_input   text not null,
   logged_at   timestamptz not null,
@@ -64,7 +64,7 @@ create policy "Users own their food logs" on food_logs
 
 -- ─── Training sessions ──────────────────────────────────────────────────────
 create table if not exists training_sessions (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   user_id           uuid references auth.users(id) on delete cascade,
   session_type      text not null,
   planned_at        timestamptz not null,
@@ -82,7 +82,7 @@ create policy "Users own their sessions" on training_sessions
 
 -- ─── Metabolic snapshots (cached state per sync) ────────────────────────────
 create table if not exists metabolic_snapshots (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   user_id           uuid references auth.users(id) on delete cascade,
   snapshot_at       timestamptz not null,
   liver_glycogen_g  numeric not null,
@@ -102,7 +102,7 @@ create policy "Users own their snapshots" on metabolic_snapshots
 
 -- ─── Cached explanations (avoid re-running LLM for same scenario) ──────────
 create table if not exists cached_explanations (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   cache_key     text not null unique,   -- hash of (user_id, session_type, timing, liver_pct, muscle_pct)
   explanation   text not null,
   generated_at  timestamptz not null default now(),
