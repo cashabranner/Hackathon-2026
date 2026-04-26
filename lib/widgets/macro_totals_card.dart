@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/metabolic_state.dart';
 import '../theme/app_theme.dart';
+import 'app_ui.dart';
 
 class MacroTotalsCard extends StatelessWidget {
   final MetabolicState state;
@@ -10,23 +11,28 @@ class MacroTotalsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return AppCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text("Today's Macros",
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 14),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontSize: 20)),
+            const SizedBox(height: 18),
             Row(
               children: [
-                _MacroTile('Carbs', '${state.totalCarbsG.round()}g', AppTheme.teal),
                 _MacroTile(
-                    'Protein', '${state.totalProteinG.round()}g', AppTheme.amber),
-                _MacroTile('Fat', '${state.totalFatG.round()}g', AppTheme.coral),
-                _MacroTile('kcal', '${state.totalCalories.round()}',
-                    Colors.white54),
+                    'Carbs', '${state.totalCarbsG.round()}g', AppTheme.teal),
+                _MacroTile('Protein', '${state.totalProteinG.round()}g',
+                    AppTheme.amber),
+                _MacroTile(
+                    'Fat', '${state.totalFatG.round()}g', AppTheme.coral),
+                _MacroTile(
+                    'kcal', '${state.totalCalories.round()}', AppTheme.gray500),
               ],
             ),
             const SizedBox(height: 12),
@@ -52,11 +58,10 @@ class _MacroTile extends StatelessWidget {
         children: [
           Text(value,
               style: TextStyle(
-                  color: color, fontSize: 18, fontWeight: FontWeight.w700)),
+                  color: color, fontSize: 28, fontWeight: FontWeight.w600)),
           const SizedBox(height: 2),
           Text(label,
-              style:
-                  const TextStyle(color: Colors.white54, fontSize: 11)),
+              style: const TextStyle(color: AppTheme.gray600, fontSize: 13)),
         ],
       ),
     );
@@ -76,7 +81,7 @@ class _MicroRow extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           'Fiber: ${state.totalFiberG.round()}g',
-          style: const TextStyle(fontSize: 12, color: Colors.white54),
+          style: const TextStyle(fontSize: 13, color: AppTheme.gray600),
         ),
       ],
     );

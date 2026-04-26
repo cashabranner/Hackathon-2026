@@ -18,6 +18,8 @@ class TrainingSession {
   final int durationMinutes;
   final SessionIntensity intensity;
   final String? notes;
+  final String? customName;
+  final String? customSplitId;
 
   const TrainingSession({
     required this.id,
@@ -27,6 +29,8 @@ class TrainingSession {
     required this.durationMinutes,
     required this.intensity,
     this.notes,
+    this.customName,
+    this.customSplitId,
   });
 
   double get depletionRateGPerMin => switch (intensity) {
@@ -39,7 +43,9 @@ class TrainingSession {
   double get estimatedMuscleGlycogenCostG =>
       depletionRateGPerMin * durationMinutes;
 
-  String get displayName => switch (type) {
+  String get displayName =>
+      customName ??
+      switch (type) {
         SessionType.legs => 'Leg Day',
         SessionType.upperPush => 'Upper Push',
         SessionType.upperPull => 'Upper Pull',
@@ -57,6 +63,8 @@ class TrainingSession {
     int? durationMinutes,
     SessionIntensity? intensity,
     String? notes,
+    String? customName,
+    String? customSplitId,
   }) {
     return TrainingSession(
       id: id ?? this.id,
@@ -66,6 +74,8 @@ class TrainingSession {
       durationMinutes: durationMinutes ?? this.durationMinutes,
       intensity: intensity ?? this.intensity,
       notes: notes ?? this.notes,
+      customName: customName ?? this.customName,
+      customSplitId: customSplitId ?? this.customSplitId,
     );
   }
 
@@ -77,6 +87,8 @@ class TrainingSession {
         'duration_minutes': durationMinutes,
         'intensity': intensity.name,
         'notes': notes,
+        'custom_name': customName,
+        'custom_split_id': customSplitId,
       };
 
   factory TrainingSession.fromJson(Map<String, dynamic> j) => TrainingSession(
@@ -87,5 +99,7 @@ class TrainingSession {
         durationMinutes: j['duration_minutes'] as int,
         intensity: SessionIntensity.values.byName(j['intensity'] as String),
         notes: j['notes'] as String?,
+        customName: j['custom_name'] as String?,
+        customSplitId: j['custom_split_id'] as String?,
       );
 }

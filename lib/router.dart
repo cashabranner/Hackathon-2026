@@ -13,8 +13,9 @@ GoRouter buildRouter(AppState appState) {
     redirect: (context, state) {
       final hasProfile = appState.hasProfile;
       final isOnboarding = state.matchedLocation.startsWith('/onboarding');
+      final isEditingProfile = state.uri.queryParameters['edit'] == 'true';
       if (!hasProfile && !isOnboarding) return '/onboarding';
-      if (hasProfile && isOnboarding) return '/dashboard';
+      if (hasProfile && isOnboarding && !isEditingProfile) return '/dashboard';
       return null;
     },
     refreshListenable: appState,

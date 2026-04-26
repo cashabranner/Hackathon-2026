@@ -51,7 +51,7 @@ class GlycogenChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: 25,
             getDrawingHorizontalLine: (_) =>
-                FlLine(color: Colors.white12, strokeWidth: 1),
+                FlLine(color: AppTheme.gray200, strokeWidth: 1),
           ),
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
@@ -60,8 +60,8 @@ class GlycogenChart extends StatelessWidget {
                 reservedSize: 32,
                 interval: 25,
                 getTitlesWidget: (v, _) => Text('${v.round()}%',
-                    style: const TextStyle(
-                        fontSize: 10, color: Colors.white38)),
+                    style:
+                        const TextStyle(fontSize: 10, color: AppTheme.gray500)),
               ),
             ),
             bottomTitles: AxisTitles(
@@ -73,8 +73,8 @@ class GlycogenChart extends StatelessWidget {
                       .add(Duration(seconds: (v * 3600).round()));
                   return Text(
                     DateFormat('ha').format(time).toLowerCase(),
-                    style: const TextStyle(
-                        fontSize: 10, color: Colors.white38),
+                    style:
+                        const TextStyle(fontSize: 10, color: AppTheme.gray500),
                   );
                 },
               ),
@@ -132,15 +132,18 @@ class GlycogenLegend extends StatelessWidget {
       children: [
         _dot(AppTheme.teal),
         const SizedBox(width: 4),
-        const Text('Liver', style: TextStyle(fontSize: 12, color: Colors.white54)),
+        const Text('Liver',
+            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
         const SizedBox(width: 16),
         _dot(AppTheme.amber),
         const SizedBox(width: 4),
-        const Text('Muscle', style: TextStyle(fontSize: 12, color: Colors.white54)),
+        const Text('Muscle',
+            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
         const SizedBox(width: 16),
         _dot(AppTheme.coral),
         const SizedBox(width: 4),
-        const Text('BG proxy', style: TextStyle(fontSize: 12, color: Colors.white54)),
+        const Text('BG proxy',
+            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
       ],
     );
   }

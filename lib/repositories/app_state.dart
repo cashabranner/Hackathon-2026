@@ -7,6 +7,7 @@ import '../models/metabolic_state.dart';
 import '../models/nutrition_estimate.dart';
 import '../models/training_session.dart';
 import '../models/user_profile.dart';
+import '../models/workout_split.dart';
 import '../services/food_parser.dart';
 import '../services/metabolic_engine.dart';
 import '../services/prescription_engine.dart';
@@ -18,6 +19,7 @@ class AppState extends ChangeNotifier {
   UserProfile? _profile;
   List<FoodLog> _foodLogs = [];
   List<TrainingSession> _sessions = [];
+  List<WorkoutSplit> _workoutSplits = [];
   MetabolicState? _metabolicState;
   FuelPrescription? _prescription;
   DateTime _now = DateTime.now();
@@ -28,6 +30,7 @@ class AppState extends ChangeNotifier {
   UserProfile? get profile => _profile;
   List<FoodLog> get foodLogs => List.unmodifiable(_foodLogs);
   List<TrainingSession> get sessions => List.unmodifiable(_sessions);
+  List<WorkoutSplit> get workoutSplits => List.unmodifiable(_workoutSplits);
   MetabolicState? get metabolicState => _metabolicState;
   FuelPrescription? get prescription => _prescription;
   DateTime get now => _now;
@@ -65,6 +68,7 @@ class AppState extends ChangeNotifier {
     _profile = null;
     _foodLogs = [];
     _sessions = [];
+    _workoutSplits = [];
     _prescription = null;
     _metabolicState = null;
     _now = DateTime.now();
@@ -157,6 +161,26 @@ class AppState extends ChangeNotifier {
   void deleteSession(String id) {
     _sessions = _sessions.where((s) => s.id != id).toList();
     _recompute();
+    notifyListeners();
+  }
+
+  // ─── Custom workout splits ───────────────────────────────────────────────
+
+  void saveWorkoutSplit(WorkoutSplit split) {
+    final index = _workoutSplits.indexWhere((s) => s.id == split.id);
+    if (index == -1) {
+      _workoutSplits = [..._workoutSplits, split];
+    } else {
+      _workoutSplits = [
+        for (final existing in _workoutSplits)
+          if (existing.id == split.id) split else existing,
+      ];
+    }
+    notifyListeners();
+  }
+
+  void deleteWorkoutSplit(String id) {
+    _workoutSplits = _workoutSplits.where((s) => s.id != id).toList();
     notifyListeners();
   }
 

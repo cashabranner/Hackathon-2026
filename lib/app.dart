@@ -36,7 +36,7 @@ class _FuelWindowAppState extends State<FuelWindowApp> {
           final router = buildRouter(_appState);
           return MaterialApp.router(
             title: 'FuelWindow',
-            theme: AppTheme.dark,
+            theme: AppTheme.light,
             routerConfig: router,
             debugShowCheckedModeBanner: false,
           );
