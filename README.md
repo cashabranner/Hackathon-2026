@@ -1,4 +1,4 @@
-# FuelWindow
+# Fuel
 
 Flutter app for metabolic fueling guidance.
 

@@ -6,5 +6,5 @@ import 'app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env', isOptional: true);
-  runApp(const FuelWindowApp());
+  runApp(const FuelApp());
 }

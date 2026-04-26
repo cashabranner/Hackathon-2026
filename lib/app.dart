@@ -5,20 +5,21 @@ import 'repositories/app_state.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 
-class FuelWindowApp extends StatefulWidget {
-  const FuelWindowApp({super.key});
+class FuelApp extends StatefulWidget {
+  const FuelApp({super.key});
 
   @override
-  State<FuelWindowApp> createState() => _FuelWindowAppState();
+  State<FuelApp> createState() => _FuelAppState();
 }
 
-class _FuelWindowAppState extends State<FuelWindowApp> {
+class _FuelAppState extends State<FuelApp> {
   late final AppState _appState;
 
   @override
   void initState() {
     super.initState();
     _appState = AppState();
+    _appState.loadPersistedState();
   }
 
   @override
@@ -35,7 +36,7 @@ class _FuelWindowAppState extends State<FuelWindowApp> {
         builder: (context) {
           final router = buildRouter(_appState);
           return MaterialApp.router(
-            title: 'FuelWindow',
+            title: 'Fuel',
             theme: AppTheme.light,
             routerConfig: router,
             debugShowCheckedModeBanner: false,

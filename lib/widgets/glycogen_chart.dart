@@ -107,7 +107,7 @@ class GlycogenChart extends StatelessWidget {
           lineBarsData: [
             _line(liverSpots, AppTheme.teal, 'Liver'),
             _line(muscleSpots, AppTheme.amber, 'Muscle'),
-            _line(bgSpots, AppTheme.coral, 'BG proxy'),
+            _line(bgSpots, AppTheme.coral, 'Body Glucose'),
           ],
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
@@ -188,7 +188,7 @@ class GlycogenLegend extends StatelessWidget {
         ),
         _LegendItem.swatch(
           color: AppTheme.coral,
-          label: 'BG proxy',
+          label: 'Body Glucose',
           info: _MetricInfo.bgProxy,
         ),
         _LegendItem.dashed(color: AppTheme.gray500, label: 'Targets'),
@@ -342,9 +342,9 @@ class _MetricInfo {
   );
 
   static const bgProxy = _MetricInfo(
-    title: 'BG Proxy',
+    title: 'Body Glucose',
     body:
-        'BG proxy is a simplified 0-100 estimate of blood-glucose availability, not a medical glucose reading. It rises after meals and trends lower during fasting or exercise.',
+        'Body Glucose is a simplified 0-100 estimate of blood-glucose availability, not a medical glucose reading. It rises after meals and trends lower during fasting or exercise.',
     hint:
         'Use it as a trend signal for fueling timing, not as a clinical blood sugar value.',
     icon: Icons.monitor_heart_outlined,

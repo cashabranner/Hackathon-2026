@@ -45,12 +45,14 @@ class SplitExercise {
   final List<String> muscles;
   final int sets;
   final String reps;
+  final String? notes;
 
   const SplitExercise({
     required this.name,
     required this.muscles,
     required this.sets,
     required this.reps,
+    this.notes,
   });
 
   SplitExercise copyWith({
@@ -58,12 +60,14 @@ class SplitExercise {
     List<String>? muscles,
     int? sets,
     String? reps,
+    String? notes,
   }) {
     return SplitExercise(
       name: name ?? this.name,
       muscles: muscles ?? this.muscles,
       sets: sets ?? this.sets,
       reps: reps ?? this.reps,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -72,6 +76,7 @@ class SplitExercise {
         'muscles': muscles,
         'sets': sets,
         'reps': reps,
+        'notes': notes,
       };
 
   factory SplitExercise.fromJson(Map<String, dynamic> json) => SplitExercise(
@@ -79,6 +84,7 @@ class SplitExercise {
         muscles: List<String>.from(json['muscles'] as List? ?? const []),
         sets: json['sets'] as int,
         reps: json['reps'] as String,
+        notes: json['notes'] as String?,
       );
 }
 

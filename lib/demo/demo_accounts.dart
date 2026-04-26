@@ -1,6 +1,10 @@
 import '../models/food_log.dart';
+import '../models/food_catalog.dart';
+import '../models/nutrition_estimate.dart';
 import '../models/training_session.dart';
 import '../models/user_profile.dart';
+import '../models/workout_split.dart';
+import '../services/workout_preset_engine.dart';
 
 /// Seeded judge scenarios for the hackathon demo.
 /// Select a demo account from the onboarding screen to preload a day.
@@ -245,10 +249,104 @@ class DemoAccount {
     required this.nowIso,
   });
 
-  DateTime get now => DateTime.parse(nowIso);
+  DateTime get now => DateTime.now();
 
-  List<FoodLog> get foodLogs =>
-      foodLogsJson.map((j) => FoodLog.fromJson(j)).toList();
+  List<FoodLog> get foodLogs {
+    if (foodLogsJson.isEmpty) {
+      return [
+        _demoLog(
+          id: '${profile.id}-meal-1',
+          rawInput: 'rice, chicken, banana',
+          loggedAt: now.subtract(const Duration(hours: 42)),
+          nutrition: const NutritionEstimate(
+            foodName: 'Rice, chicken, banana',
+            grams: 520,
+            carbsG: 82,
+            glucoseG: 62,
+            fructoseG: 10,
+            fiberG: 5,
+            proteinG: 42,
+            fatG: 6,
+            calories: 550,
+          ),
+        ),
+        _demoLog(
+          id: '${profile.id}-meal-2',
+          rawInput: 'eggs and toast',
+          loggedAt: now.subtract(const Duration(hours: 24)),
+          nutrition: const NutritionEstimate(
+            foodName: 'Eggs and toast',
+            grams: 280,
+            carbsG: 34,
+            glucoseG: 27,
+            fructoseG: 2,
+            fiberG: 4,
+            proteinG: 25,
+            fatG: 18,
+            calories: 398,
+            isHighFat: true,
+          ),
+        ),
+      ];
+    }
+    final offsets = [
+      const Duration(hours: 42),
+      const Duration(hours: 30),
+      const Duration(hours: 22),
+      const Duration(hours: 6),
+    ];
+    return foodLogsJson.asMap().entries.map((entry) {
+      final json = Map<String, dynamic>.from(entry.value);
+      json['logged_at'] =
+          now.subtract(offsets[entry.key % offsets.length]).toIso8601String();
+      return FoodLog.fromJson(json);
+    }).toList();
+  }
+
+  FoodLog _demoLog({
+    required String id,
+    required String rawInput,
+    required DateTime loggedAt,
+    required NutritionEstimate nutrition,
+  }) {
+    return FoodLog(
+      id: id,
+      userId: profile.id,
+      rawInput: rawInput,
+      loggedAt: loggedAt,
+      nutrition: nutrition,
+      source: 'demo',
+    );
+  }
+
+  List<SavedFood> get savedFoods => foodLogs
+      .map(
+        (log) => SavedFood(
+          id: 'saved-${log.id}',
+          name: log.nutrition.foodName,
+          servingLabel: 'serving',
+          nutrition: log.nutrition,
+        ),
+      )
+      .toList();
+
+  List<TrainingSession> get sessions {
+    final upcoming = Map<String, dynamic>.from(sessionJson);
+    upcoming['planned_at'] =
+        now.add(const Duration(hours: 2)).toIso8601String();
+    final past = Map<String, dynamic>.from(sessionJson);
+    past['id'] = '${sessionJson['id']}-past';
+    past['planned_at'] =
+        now.subtract(const Duration(hours: 28)).toIso8601String();
+    past['duration_minutes'] = 60;
+    past['intensity'] = 'high';
+    return [TrainingSession.fromJson(past), TrainingSession.fromJson(upcoming)];
+  }
+
+  List<WorkoutSplit> get workoutSplits => [
+        WorkoutPresetEngine.recommendedSplit(profile.workoutPreferences),
+        ...WorkoutPresetEngine.genericPresets(),
+      ];
 
   TrainingSession get session => TrainingSession.fromJson(sessionJson);
 }

@@ -1,34 +1,71 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuelwindow/demo/demo_accounts.dart';
+import 'package:fuelwindow/models/nutrition_estimate.dart';
 import 'package:fuelwindow/repositories/app_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('Demo account workout times are rebased to the current clock', () {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  test('Demo accounts seed recent relative history', () {
     final state = AppState();
     try {
       final demo = DemoAccounts.all[1];
 
       state.loadDemoAccount(demo);
 
-      final session = state.nextSession;
-      expect(session, isNotNull);
-
-      final demoOffset = demo.session.plannedAt.difference(demo.now);
-      final actualOffset = session!.plannedAt.difference(state.now);
+      expect(state.foodLogs, isNotEmpty);
+      expect(state.savedFoods, isNotEmpty);
+      expect(state.sessions.length, greaterThanOrEqualTo(2));
+      expect(state.workoutSplits, isNotEmpty);
+      expect(state.nextSession, isNotNull);
       expect(
-        actualOffset.inMinutes,
-        closeTo(demoOffset.inMinutes, 1),
-      );
-
-      final demoFoodOffset = demo.foodLogs.first.loggedAt.difference(demo.now);
-      final actualFoodOffset =
-          state.foodLogs.first.loggedAt.difference(state.now);
-      expect(
-        actualFoodOffset.inMinutes,
-        closeTo(demoFoodOffset.inMinutes, 1),
+        state.foodLogs.every(
+          (log) => state.now.difference(log.loggedAt).inHours <= 48,
+        ),
+        isTrue,
       );
     } finally {
       state.dispose();
+    }
+  });
+
+  test('Persists and restores profile, meals, sessions, and presets', () async {
+    final state = AppState();
+    try {
+      state.loadDemoAccount(DemoAccounts.all.first);
+      state.saveMeal(
+        const NutritionEstimate(
+          foodName: 'Test meal',
+          grams: 100,
+          carbsG: 20,
+          glucoseG: 15,
+          fructoseG: 2,
+          fiberG: 3,
+          proteinG: 10,
+          fatG: 5,
+          calories: 165,
+        ),
+      );
+      await state.persistState();
+    } finally {
+      state.dispose();
+    }
+
+    final restored = AppState();
+    try {
+      await restored.loadPersistedState();
+      expect(restored.profile, isNotNull);
+      expect(restored.foodLogs, isNotEmpty);
+      expect(restored.savedFoods, isNotEmpty);
+      expect(restored.sessions, isNotEmpty);
+      expect(restored.workoutSplits, isNotEmpty);
+    } finally {
+      restored.dispose();
     }
   });
 }

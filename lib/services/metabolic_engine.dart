@@ -33,7 +33,7 @@ class MetabolicEngine {
 
   // ─── Compute a baseline (morning-fasted) metabolic state ────────────────
 
-  static MetabolicState computeBaseline(UserProfile p) {
+  static MetabolicState computeBaseline(UserProfile p, {DateTime? asOf}) {
     final lbm = leanBodyMassKg(p);
     final bmr = bmrKcal(p);
     final tdee = tdeeKcal(p);
@@ -46,7 +46,7 @@ class MetabolicEngine {
 
     return MetabolicState(
       userId: p.id,
-      asOf: DateTime.now().copyWith(hour: 7, minute: 0, second: 0),
+      asOf: asOf ?? DateTime.now(),
       leanBodyMassKg: lbm,
       bmrKcal: bmr,
       tdeeKcal: tdee,
@@ -69,61 +69,79 @@ class MetabolicEngine {
     List<TrainingSession> sessions,
     DateTime now,
   ) {
-    var state = computeBaseline(profile);
-    final dayStart =
-        DateTime(now.year, now.month, now.day, 7, 0); // assume 7am wake
-    final curve = <GlycogenPoint>[
-      GlycogenPoint(
-        time: dayStart,
-        liverGlycogenG: state.liverGlycogenG,
-        muscleGlycogenG: state.muscleGlycogenG,
-        bloodGlucoseProxy: _bgProxy(state),
-      )
-    ];
+    final windowStart = now.subtract(const Duration(hours: 16));
+    final replayFloor = now.subtract(const Duration(hours: 48));
+    final replayStart = profile.createdAt.isAfter(replayFloor)
+        ? profile.createdAt
+        : replayFloor;
+    final todayStart = DateTime(now.year, now.month, now.day);
 
-    // Merge events and sort chronologically
+    var state = computeBaseline(profile, asOf: replayStart);
+    final curve = <GlycogenPoint>[];
+
     final events = <_DayEvent>[
       for (final f in foodLogs)
-        if (!f.loggedAt.isBefore(dayStart) && !f.loggedAt.isAfter(now))
+        if (!f.loggedAt.isBefore(replayStart) && !f.loggedAt.isAfter(now))
           _FoodEvent(f.loggedAt, f),
       for (final s in sessions)
-        if (!s.plannedAt.isBefore(dayStart) &&
+        if (!s.plannedAt.isBefore(replayStart) &&
             !s.plannedAt.isAfter(now) &&
-            s.plannedAt.add(Duration(minutes: s.durationMinutes)).isBefore(now))
+            !s.plannedAt.add(Duration(minutes: s.durationMinutes)).isAfter(now))
           _SessionEvent(s.plannedAt, s),
     ]..sort((a, b) => a.time.compareTo(b.time));
 
-    DateTime cursor = dayStart;
+    DateTime cursor = replayStart;
 
-    for (final event in events) {
-      // Advance resting depletion from cursor to event time
-      final idleHours = event.time.difference(cursor).inMinutes / 60.0;
-      state = _applyRestingDepletion(state, idleHours);
-      cursor = event.time;
-
-      if (event is _FoodEvent) {
-        state = _applyFood(state, event.log, profile);
-      } else if (event is _SessionEvent) {
-        state = _applyTrainingSession(state, event.session);
+    void addPoint(DateTime time) {
+      if (curve.isNotEmpty && curve.last.time.isAtSameMomentAs(time)) {
+        curve.removeLast();
       }
-
       curve.add(GlycogenPoint(
-        time: cursor,
+        time: time,
         liverGlycogenG: state.liverGlycogenG,
         muscleGlycogenG: state.muscleGlycogenG,
         bloodGlucoseProxy: _bgProxy(state),
       ));
     }
 
-    // Final resting depletion from last event to now
-    final remainingHours = now.difference(cursor).inMinutes / 60.0;
-    state = _applyRestingDepletion(state, remainingHours);
-    curve.add(GlycogenPoint(
-      time: now,
-      liverGlycogenG: state.liverGlycogenG,
-      muscleGlycogenG: state.muscleGlycogenG,
-      bloodGlucoseProxy: _bgProxy(state),
-    ));
+    void advanceTo(DateTime target) {
+      if (!target.isAfter(cursor)) return;
+      if (cursor.isBefore(windowStart) && !target.isBefore(windowStart)) {
+        final hoursToWindow = windowStart.difference(cursor).inMinutes / 60.0;
+        state = _applyRestingDepletion(state, hoursToWindow);
+        cursor = windowStart;
+        addPoint(cursor);
+      }
+      final idleHours = target.difference(cursor).inMinutes / 60.0;
+      if (idleHours > 0) {
+        state = _applyRestingDepletion(state, idleHours);
+        cursor = target;
+      }
+    }
+
+    if (!replayStart.isBefore(windowStart)) {
+      addPoint(replayStart);
+    }
+
+    for (final event in events) {
+      advanceTo(event.time);
+
+      if (event is _FoodEvent) {
+        state = _applyFood(
+          state,
+          event.log,
+          profile,
+          countTotals: !event.log.loggedAt.isBefore(todayStart),
+        );
+      } else if (event is _SessionEvent) {
+        state = _applyTrainingSession(state, event.session);
+      }
+
+      if (!cursor.isBefore(windowStart)) addPoint(cursor);
+    }
+
+    advanceTo(now);
+    addPoint(now);
 
     return state.copyWith(asOf: now, curve: curve);
   }
@@ -144,7 +162,11 @@ class MetabolicEngine {
   }
 
   static MetabolicState _applyFood(
-      MetabolicState s, FoodLog log, UserProfile profile) {
+    MetabolicState s,
+    FoodLog log,
+    UserProfile profile, {
+    bool countTotals = true,
+  }) {
     final n = log.nutrition;
 
     // Glucose/starch → blood glucose → partitioned to muscle then liver
@@ -174,11 +196,11 @@ class MetabolicEngine {
       muscleGlycogenG: newMuscle,
       liverGlycogenG: newLiver,
       bloodGlucosePhase: phase,
-      totalCarbsG: s.totalCarbsG + n.carbsG,
-      totalProteinG: s.totalProteinG + n.proteinG,
-      totalFatG: s.totalFatG + n.fatG,
-      totalCalories: s.totalCalories + n.calories,
-      totalFiberG: s.totalFiberG + n.fiberG,
+      totalCarbsG: s.totalCarbsG + (countTotals ? n.carbsG : 0),
+      totalProteinG: s.totalProteinG + (countTotals ? n.proteinG : 0),
+      totalFatG: s.totalFatG + (countTotals ? n.fatG : 0),
+      totalCalories: s.totalCalories + (countTotals ? n.calories : 0),
+      totalFiberG: s.totalFiberG + (countTotals ? n.fiberG : 0),
     );
   }
 

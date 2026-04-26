@@ -210,14 +210,17 @@ void main() {
 
   group('Resting depletion', () {
     test('Liver depletes over time without food', () {
+      final freshProfile = _male75.copyWith(
+        createdAt: DateTime(2026, 4, 25, 7),
+      );
       final morning = MetabolicEngine.replayDay(
-        _male75,
+        freshProfile,
         [],
         [],
         DateTime(2026, 4, 25, 9),
       );
       final afternoon = MetabolicEngine.replayDay(
-        _male75,
+        freshProfile,
         [],
         [],
         DateTime(2026, 4, 25, 14),
@@ -350,6 +353,17 @@ void main() {
           isTrue,
         );
       }
+    });
+
+    test('Curve is a rolling 16-hour window ending at now', () {
+      final now = DateTime(2026, 4, 25, 18);
+      final result = MetabolicEngine.replayDay(_male75, [], [], now);
+
+      expect(result.curve.last.time, equals(now));
+      expect(
+        result.curve.last.time.difference(result.curve.first.time).inHours,
+        lessThanOrEqualTo(16),
+      );
     });
   });
 }

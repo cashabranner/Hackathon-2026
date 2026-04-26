@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../demo/demo_accounts.dart';
 import '../models/food_catalog.dart';
@@ -19,6 +21,8 @@ import '../models/fuel_prescription.dart';
 /// Central app state managed as a ChangeNotifier.
 /// Designed so the Supabase-backed layer slots in behind the same interface.
 class AppState extends ChangeNotifier {
+  static const _storageKey = 'fuel_app_state_v1';
+
   UserProfile? _profile;
   List<FoodLog> _foodLogs = [];
   List<SavedFood> _savedFoods = [];
@@ -27,8 +31,10 @@ class AppState extends ChangeNotifier {
   MetabolicState? _metabolicState;
   FuelPrescription? _prescription;
   DateTime _now = DateTime.now();
-  bool _isDemoMode = false;
   Timer? _clockTimer;
+  bool _isHydrated = false;
+  bool _pendingGreeting = false;
+  bool _isDemoMode = false;
 
   AppState() {
     _startClock();
@@ -44,6 +50,8 @@ class AppState extends ChangeNotifier {
   MetabolicState? get metabolicState => _metabolicState;
   FuelPrescription? get prescription => _prescription;
   DateTime get now => _now;
+  bool get isHydrated => _isHydrated;
+  bool get pendingGreeting => _pendingGreeting;
   bool get isDemoMode => _isDemoMode;
   bool get hasProfile => _profile != null;
 
@@ -53,39 +61,96 @@ class AppState extends ChangeNotifier {
     return upcoming.isEmpty ? null : upcoming.first;
   }
 
+  Future<void> loadPersistedState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey);
+    if (raw != null) {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      _profile = json['profile'] == null
+          ? null
+          : UserProfile.fromJson(json['profile'] as Map<String, dynamic>);
+      _foodLogs = (json['food_logs'] as List? ?? const [])
+          .map((item) => FoodLog.fromJson(item as Map<String, dynamic>))
+          .toList();
+      _savedFoods = (json['saved_foods'] as List? ?? const [])
+          .map((item) => SavedFood.fromJson(item as Map<String, dynamic>))
+          .toList();
+      _sessions = (json['sessions'] as List? ?? const [])
+          .map((item) => TrainingSession.fromJson(item as Map<String, dynamic>))
+          .toList();
+      _workoutSplits = (json['workout_splits'] as List? ?? const [])
+          .map((item) => WorkoutSplit.fromJson(item as Map<String, dynamic>))
+          .toList();
+      _isDemoMode = json['is_demo_mode'] as bool? ?? false;
+      _pendingGreeting = _profile != null;
+    }
+    _now = DateTime.now();
+    _isHydrated = true;
+    _recompute();
+    notifyListeners();
+  }
+
+  Future<void> persistState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _storageKey,
+      jsonEncode({
+        'profile': _profile?.toJson(),
+        'food_logs': _foodLogs.map((log) => log.toJson()).toList(),
+        'saved_foods': _savedFoods.map((food) => food.toJson()).toList(),
+        'sessions': _sessions.map((session) => session.toJson()).toList(),
+        'workout_splits':
+            _workoutSplits.map((split) => split.toJson()).toList(),
+        'is_demo_mode': _isDemoMode,
+      }),
+    );
+  }
+
+  void _persistState() {
+    unawaited(persistState());
+  }
+
+  void consumeGreeting() {
+    if (!_pendingGreeting) return;
+    _pendingGreeting = false;
+    notifyListeners();
+  }
+
   // ─── Onboarding ──────────────────────────────────────────────────────────
 
   void saveProfile(UserProfile profile) {
     _profile = profile;
+    _isDemoMode = false;
+    _pendingGreeting = false;
     addWorkoutPresetsFromPreferences(notify: false);
     _recompute();
+    _persistState();
+    notifyListeners();
+  }
+
+  void updateProfile(UserProfile profile) {
+    _profile = profile;
+    addWorkoutPresetsFromPreferences(notify: false);
+    _recompute();
+    _persistState();
     notifyListeners();
   }
 
   // ─── Demo mode ───────────────────────────────────────────────────────────
 
   void loadDemoAccount(DemoAccount demo) {
-    final realNow = DateTime.now();
-    final demoNow = demo.now;
-    final demoSession = demo.session;
-
     _isDemoMode = true;
-    _profile = demo.profile;
-    _foodLogs = demo.foodLogs
-        .map(
-          (log) => log.copyWith(
-            loggedAt: realNow.add(log.loggedAt.difference(demoNow)),
-          ),
-        )
-        .toList();
-    _savedFoods = [];
-    _sessions = [
-      demoSession.copyWith(
-        plannedAt: realNow.add(demoSession.plannedAt.difference(demoNow)),
-      ),
-    ];
-    _now = realNow;
+    _profile = demo.profile.copyWith(
+      createdAt: DateTime.now().subtract(const Duration(hours: 48)),
+    );
+    _foodLogs = demo.foodLogs;
+    _savedFoods = demo.savedFoods;
+    _sessions = demo.sessions;
+    _workoutSplits = demo.workoutSplits;
+    _pendingGreeting = true;
+    _now = DateTime.now();
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
@@ -99,6 +164,7 @@ class AppState extends ChangeNotifier {
     _prescription = null;
     _metabolicState = null;
     _now = DateTime.now();
+    _persistState();
     notifyListeners();
   }
 
@@ -136,6 +202,7 @@ class AppState extends ChangeNotifier {
     _foodLogs = [..._foodLogs, log];
     saveFoodFromNutrition(resolvedNutrition);
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
@@ -170,18 +237,77 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void saveMeal(NutritionEstimate nutrition, {String source = 'generated'}) {
+    saveFoodFromNutrition(nutrition);
+    _persistState();
+    notifyListeners();
+  }
+
+  void seedGenericMealsIfNeeded() {
+    if (_savedFoods.isNotEmpty) return;
+    for (final nutrition in _genericMeals) {
+      saveFoodFromNutrition(nutrition);
+    }
+    _persistState();
+    notifyListeners();
+  }
+
+  static const List<NutritionEstimate> _genericMeals = [
+    NutritionEstimate(
+      foodName: 'Eggs and Toast',
+      grams: 260,
+      carbsG: 32,
+      glucoseG: 25,
+      fructoseG: 2,
+      fiberG: 4,
+      proteinG: 24,
+      fatG: 18,
+      calories: 386,
+      isHighFat: true,
+      isHighFiber: false,
+    ),
+    NutritionEstimate(
+      foodName: 'Greek Yogurt and Banana',
+      grams: 330,
+      carbsG: 42,
+      glucoseG: 25,
+      fructoseG: 10,
+      fiberG: 3,
+      proteinG: 26,
+      fatG: 2,
+      calories: 290,
+      isHighFat: false,
+      isHighFiber: false,
+    ),
+    NutritionEstimate(
+      foodName: 'Rice and Chicken Bowl',
+      grams: 430,
+      carbsG: 58,
+      glucoseG: 54,
+      fructoseG: 1,
+      fiberG: 3,
+      proteinG: 42,
+      fatG: 7,
+      calories: 463,
+      isHighFat: false,
+      isHighFiber: false,
+    ),
+  ];
+
   void updateFoodLog(FoodLog updated) {
     _foodLogs = [
       for (final f in _foodLogs)
         if (f.id == updated.id) updated else f,
     ];
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
   void deleteFoodLog(String id) {
     _foodLogs = _foodLogs.where((f) => f.id != id).toList();
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
@@ -190,6 +316,7 @@ class AppState extends ChangeNotifier {
   void addSession(TrainingSession session) {
     _sessions = [..._sessions, session];
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
@@ -199,12 +326,14 @@ class AppState extends ChangeNotifier {
         if (s.id == updated.id) updated else s,
     ];
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
   void deleteSession(String id) {
     _sessions = _sessions.where((s) => s.id != id).toList();
     _recompute();
+    _persistState();
     notifyListeners();
   }
 
@@ -220,6 +349,7 @@ class AppState extends ChangeNotifier {
           if (existing.id == split.id) split else existing,
       ];
     }
+    _persistState();
     notifyListeners();
   }
 
@@ -235,11 +365,13 @@ class AppState extends ChangeNotifier {
         _workoutSplits = [..._workoutSplits, preset];
       }
     }
+    _persistState();
     if (notify) notifyListeners();
   }
 
   void deleteWorkoutSplit(String id) {
     _workoutSplits = _workoutSplits.where((s) => s.id != id).toList();
+    _persistState();
     notifyListeners();
   }
 
@@ -276,10 +408,8 @@ class AppState extends ChangeNotifier {
 
   void _startClock() {
     _clockTimer?.cancel();
-    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      final nextNow = DateTime.now();
-      if (nextNow.difference(_now).inSeconds.abs() < 30) return;
-      _now = nextNow;
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _now = DateTime.now();
       _recompute();
       notifyListeners();
     });

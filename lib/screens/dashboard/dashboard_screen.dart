@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -37,6 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   _MainTab _tab = _MainTab.home;
   DateTime _selectedDate = DateTime.now();
   bool _dateInitialized = false;
+  bool _greetingScheduled = false;
 
   final _mealNameCtrl = TextEditingController();
   final _carbsCtrl = TextEditingController();
@@ -49,10 +52,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isScanningLabel = false;
   String? _scanLabelStatus;
   List<ParsedFoodItem> _parsedFoodItems = [];
+  NutritionEstimate? _scanBaseEstimate;
+  final _scanServingsCtrl = TextEditingController(text: '1');
 
   final _workoutNameCtrl = TextEditingController();
   final _workoutDurationCtrl = TextEditingController(text: '60');
-  final List<_LoggedWorkout> _loggedWorkouts = [];
+  final _exerciseNameCtrl = TextEditingController();
+  final _exerciseSetsCtrl = TextEditingController(text: '3');
+  final _exerciseRepsCtrl = TextEditingController(text: '8-12');
+  final _exerciseNotesCtrl = TextEditingController();
+  DateTime? _activeWorkoutStart;
+  Timer? _activeWorkoutTimer;
+  Duration _activeWorkoutElapsed = Duration.zero;
+  SessionIntensity _activeWorkoutIntensity = SessionIntensity.moderate;
+  List<SplitExercise> _activeWorkoutExercises = [];
 
   @override
   void initState() {
@@ -68,9 +81,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _carbsCtrl.dispose();
     _proteinCtrl.dispose();
     _fatCtrl.dispose();
+    _scanServingsCtrl.dispose();
     _mealFocus.dispose();
     _workoutNameCtrl.dispose();
     _workoutDurationCtrl.dispose();
+    _exerciseNameCtrl.dispose();
+    _exerciseSetsCtrl.dispose();
+    _exerciseRepsCtrl.dispose();
+    _exerciseNotesCtrl.dispose();
+    _activeWorkoutTimer?.cancel();
     super.dispose();
   }
 
@@ -116,22 +135,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _addMeal() async {
     final name = _mealNameCtrl.text.trim();
+    final scanEstimate = _scaledScanEstimate(name);
     final parsedEstimate = _parsedFoodItems.isEmpty
         ? null
         : aggregateParsedFoodItems(_parsedFoodItems, foodName: name);
-    final carbs =
-        parsedEstimate?.carbsG ?? double.tryParse(_carbsCtrl.text.trim()) ?? 0;
+    final carbs = parsedEstimate?.carbsG ??
+        scanEstimate?.carbsG ??
+        double.tryParse(_carbsCtrl.text.trim()) ??
+        0;
     final protein = parsedEstimate?.proteinG ??
+        scanEstimate?.proteinG ??
         double.tryParse(_proteinCtrl.text.trim()) ??
         0;
-    final fat =
-        parsedEstimate?.fatG ?? double.tryParse(_fatCtrl.text.trim()) ?? 0;
+    final fat = parsedEstimate?.fatG ??
+        scanEstimate?.fatG ??
+        double.tryParse(_fatCtrl.text.trim()) ??
+        0;
+    if (_scanBaseEstimate != null && scanEstimate == null) {
+      _showSnack('Servings must be greater than 0.');
+      return;
+    }
     if (name.isEmpty || (carbs + protein + fat) <= 0) {
       _showSnack('Add a meal name and at least one macro.');
       return;
     }
 
     final estimate = parsedEstimate ??
+        scanEstimate ??
         NutritionEstimate(
           foodName: name,
           grams: 0,
@@ -160,6 +190,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _scanLabelStatus = null;
       _parsedFoodItems = [];
+      _scanBaseEstimate = null;
+      _scanServingsCtrl.text = '1';
     });
     _showSnack('Meal added.');
   }
@@ -169,6 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _parsedFoodItems[index] = _parsedFoodItems[index].copyWith(
         servingQty: servingQty.clamp(0.25, 12).toDouble(),
       );
+      _scanBaseEstimate = null;
       final estimate = aggregateParsedFoodItems(
         _parsedFoodItems,
         foodName: _mealNameCtrl.text.trim(),
@@ -186,7 +219,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _proteinCtrl.text = food.nutrition.proteinG.round().toString();
       _fatCtrl.text = food.nutrition.fatG.round().toString();
       _parsedFoodItems = [];
+      _scanBaseEstimate = null;
+      _scanServingsCtrl.text = food.defaultServingQty.toStringAsFixed(
+        food.defaultServingQty % 1 == 0 ? 0 : 1,
+      );
       _scanLabelStatus = 'Saved food ready';
+    });
+  }
+
+  NutritionEstimate? _scaledScanEstimate(String fallbackName) {
+    final base = _scanBaseEstimate;
+    if (base == null) return null;
+    final servings = double.tryParse(_scanServingsCtrl.text.trim());
+    if (servings == null || servings <= 0) return null;
+    return _scaleNutrition(base, servings, fallbackName: fallbackName);
+  }
+
+  NutritionEstimate _scaleNutrition(
+    NutritionEstimate base,
+    double servings, {
+    required String fallbackName,
+  }) {
+    final foodName =
+        fallbackName.trim().isNotEmpty ? fallbackName.trim() : base.foodName;
+    return NutritionEstimate(
+      foodName: foodName,
+      grams: base.grams * servings,
+      carbsG: base.carbsG * servings,
+      glucoseG: base.glucoseG * servings,
+      fructoseG: base.fructoseG * servings,
+      fiberG: base.fiberG * servings,
+      proteinG: base.proteinG * servings,
+      fatG: base.fatG * servings,
+      calories: base.calories * servings,
+      micros: base.micros,
+      isHighFat: base.isHighFat,
+      isHighFiber: base.isHighFiber,
+    );
+  }
+
+  void _applyScanServings(String value) {
+    final estimate = _scaledScanEstimate(_mealNameCtrl.text.trim());
+    if (estimate == null) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      _carbsCtrl.text = estimate.carbsG.round().toString();
+      _proteinCtrl.text = estimate.proteinG.round().toString();
+      _fatCtrl.text = estimate.fatG.round().toString();
     });
   }
 
@@ -326,6 +407,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _proteinCtrl.text = estimate.proteinG.round().toString();
       _fatCtrl.text = estimate.fatG.round().toString();
       _parsedFoodItems = [];
+      _scanBaseEstimate = estimate;
+      _scanServingsCtrl.text = '1';
       _scanLabelStatus = 'Scanned from label';
     });
     _showSnack('Label scanned. Review before adding.');
@@ -354,24 +437,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return err.message ?? 'Could not open image picker.';
   }
 
-  void _logWorkout() {
+  void _startWorkout([WorkoutSplit? split]) {
+    if (_activeWorkoutStart != null) return;
+    setState(() {
+      _activeWorkoutStart = DateTime.now();
+      _activeWorkoutElapsed = Duration.zero;
+      if (split != null) {
+        _workoutNameCtrl.text = split.name;
+        _activeWorkoutExercises = [...split.exercises];
+      } else {
+        _activeWorkoutExercises = [];
+      }
+    });
+    _activeWorkoutTimer?.cancel();
+    _activeWorkoutTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final started = _activeWorkoutStart;
+      if (started == null || !mounted) return;
+      setState(
+          () => _activeWorkoutElapsed = DateTime.now().difference(started));
+    });
+  }
+
+  void _addActiveExercise() {
+    final name = _exerciseNameCtrl.text.trim();
+    if (name.isEmpty) {
+      _showSnack('Add an exercise name.');
+      return;
+    }
+    final sets = int.tryParse(_exerciseSetsCtrl.text.trim()) ?? 3;
+    final reps = _exerciseRepsCtrl.text.trim().isEmpty
+        ? '8-12'
+        : _exerciseRepsCtrl.text.trim();
+    final notes = _exerciseNotesCtrl.text.trim();
+    setState(() {
+      _activeWorkoutExercises = [
+        ..._activeWorkoutExercises,
+        SplitExercise(
+          name: name,
+          muscles: const [],
+          sets: sets.clamp(1, 12),
+          reps: reps,
+          notes: notes.isEmpty ? null : notes,
+        ),
+      ];
+      _exerciseNameCtrl.clear();
+      _exerciseSetsCtrl.text = '3';
+      _exerciseRepsCtrl.text = '8-12';
+      _exerciseNotesCtrl.clear();
+    });
+  }
+
+  void _cancelActiveWorkout() {
+    _activeWorkoutTimer?.cancel();
+    setState(() {
+      _activeWorkoutStart = null;
+      _activeWorkoutElapsed = Duration.zero;
+      _activeWorkoutExercises = [];
+    });
+  }
+
+  void _finishActiveWorkout() {
+    final started = _activeWorkoutStart;
+    final profile = context.read<AppState>().profile;
+    if (started == null || profile == null) return;
+    final finishedAt = DateTime.now();
+    final elapsedMinutes = finishedAt.difference(started).inMinutes.clamp(
+          1,
+          480,
+        );
     final name = _workoutNameCtrl.text.trim().isEmpty
         ? 'Workout'
         : _workoutNameCtrl.text.trim();
-    final duration = int.tryParse(_workoutDurationCtrl.text.trim()) ?? 60;
+    context.read<AppState>().addSession(
+          TrainingSession(
+            id: 'workout-${const Uuid().v4()}',
+            userId: profile.id,
+            type: SessionType.fullBody,
+            plannedAt: finishedAt.subtract(Duration(minutes: elapsedMinutes)),
+            durationMinutes: elapsedMinutes,
+            intensity: _activeWorkoutIntensity,
+            customName: name,
+            completedExercises: _activeWorkoutExercises,
+          ),
+        );
+    _activeWorkoutTimer?.cancel();
     setState(() {
-      _loggedWorkouts.insert(
-        0,
-        _LoggedWorkout(
-          name: name,
-          durationMinutes: duration,
-          dateLabel: DateFormat('MMM d').format(DateTime.now()),
-        ),
-      );
+      _activeWorkoutStart = null;
+      _activeWorkoutElapsed = Duration.zero;
+      _activeWorkoutExercises = [];
       _workoutNameCtrl.clear();
       _workoutDurationCtrl.text = '60';
     });
-    _showSnack('Workout logged.');
+    _showSnack('Workout saved.');
   }
 
   void _showSnack(String message) {
@@ -403,6 +560,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (profile == null || metabolicState == null) {
       return const Scaffold(
         body: GradientShell(child: Center(child: CircularProgressIndicator())),
+      );
+    }
+
+    if (state.pendingGreeting) {
+      if (!_greetingScheduled) {
+        final appStateForGreeting = context.read<AppState>();
+        _greetingScheduled = true;
+        Future.delayed(const Duration(seconds: 1), () {
+          if (!mounted) return;
+          appStateForGreeting.consumeGreeting();
+          setState(() => _greetingScheduled = false);
+        });
+      }
+      final name = profile.name.trim();
+      return Scaffold(
+        body: GradientShell(
+          child: Center(
+            child: Text(
+              name.isEmpty || name == 'Athlete' ? 'hello' : 'hello $name',
+              style: Theme.of(context).textTheme.headlineLarge,
+            ),
+          ),
+        ),
       );
     }
 
@@ -453,6 +633,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             isAutofilling: _isAutofilling,
                             isScanningLabel: _isScanningLabel,
                             scanLabelStatus: _scanLabelStatus,
+                            scanBaseEstimate: _scanBaseEstimate,
+                            scanServingsCtrl: _scanServingsCtrl,
                             parsedFoodItems: _parsedFoodItems,
                             onAiChanged: (value) =>
                                 setState(() => _aiAutofill = value),
@@ -460,7 +642,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onAutofill: _autofillMacros,
                             onMealChanged: (_) => setState(() {
                               _parsedFoodItems = [];
+                              _scanBaseEstimate = null;
+                              _scanLabelStatus = null;
                             }),
+                            onScanServingChanged: _applyScanServings,
                             onParsedFoodServingChanged: _updateParsedFoodItem,
                             onSavedFoodTap: _useSavedFood,
                             onScanLabel: _showScanLabelSheet,
@@ -468,11 +653,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         if (_tab == _MainTab.workout)
                           _WorkoutPage(
                             splits: state.workoutSplits,
-                            loggedWorkouts: _loggedWorkouts,
+                            sessions: state.sessions,
                             workoutNameCtrl: _workoutNameCtrl,
-                            workoutDurationCtrl: _workoutDurationCtrl,
+                            exerciseNameCtrl: _exerciseNameCtrl,
+                            exerciseSetsCtrl: _exerciseSetsCtrl,
+                            exerciseRepsCtrl: _exerciseRepsCtrl,
+                            exerciseNotesCtrl: _exerciseNotesCtrl,
+                            activeWorkoutStart: _activeWorkoutStart,
+                            activeElapsed: _activeWorkoutElapsed,
+                            activeExercises: _activeWorkoutExercises,
+                            activeIntensity: _activeWorkoutIntensity,
                             onPlan: () => context.push('/lift-planner'),
-                            onLog: _logWorkout,
+                            onStart: () => _startWorkout(),
+                            onStartFromSplit: _startWorkout,
+                            onAddExercise: _addActiveExercise,
+                            onCancel: _cancelActiveWorkout,
+                            onFinish: _finishActiveWorkout,
+                            onIntensityChanged: (intensity) => setState(
+                              () => _activeWorkoutIntensity = intensity,
+                            ),
                             onSplits: _showSplitsSheet,
                           ),
                         if (_tab == _MainTab.calendar)
@@ -510,7 +709,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   _BottomNav(
                     current: _tab,
-                    onSelected: (tab) => setState(() => _tab = tab),
+                    onSelected: (tab) => setState(() {
+                      _tab = tab;
+                      if (tab == _MainTab.calendar) {
+                        _selectedDate = state.now;
+                      }
+                    }),
                   ),
                 ],
               ),
@@ -615,7 +819,7 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'FuelWindow',
+                  'Fuel',
                   style: TextStyle(
                     color: Color(0xFF312E81),
                     fontSize: 24,
@@ -1069,6 +1273,11 @@ class _FuelPrescriptionCard extends StatelessWidget {
             runSpacing: 10,
             children: [
               AppPill(
+                label:
+                    '${(rx.targetCarbsG * 4 + rx.targetProteinG * 4).round()} kcal',
+                color: AppTheme.gray500,
+              ),
+              AppPill(
                 label: '${rx.targetCarbsG.round()}g carbs',
                 color: AppTheme.teal,
               ),
@@ -1108,11 +1317,14 @@ class _FoodPage extends StatelessWidget {
   final bool isAutofilling;
   final bool isScanningLabel;
   final String? scanLabelStatus;
+  final NutritionEstimate? scanBaseEstimate;
+  final TextEditingController scanServingsCtrl;
   final List<ParsedFoodItem> parsedFoodItems;
   final ValueChanged<bool> onAiChanged;
   final VoidCallback onAddMeal;
   final VoidCallback onAutofill;
   final ValueChanged<String> onMealChanged;
+  final ValueChanged<String> onScanServingChanged;
   final void Function(int index, double servingQty) onParsedFoodServingChanged;
   final ValueChanged<SavedFood> onSavedFoodTap;
   final VoidCallback onScanLabel;
@@ -1128,11 +1340,14 @@ class _FoodPage extends StatelessWidget {
     required this.isAutofilling,
     required this.isScanningLabel,
     required this.scanLabelStatus,
+    required this.scanBaseEstimate,
+    required this.scanServingsCtrl,
     required this.parsedFoodItems,
     required this.onAiChanged,
     required this.onAddMeal,
     required this.onAutofill,
     required this.onMealChanged,
+    required this.onScanServingChanged,
     required this.onParsedFoodServingChanged,
     required this.onSavedFoodTap,
     required this.onScanLabel,
@@ -1141,6 +1356,7 @@ class _FoodPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final logs = appState.foodLogs.reversed.toList();
+    final calories = _estimatedCalories();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1189,7 +1405,7 @@ class _FoodPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Saved Foods',
+                  'My Meals',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 12),
@@ -1200,7 +1416,8 @@ class _FoodPage extends StatelessWidget {
                       .map(
                         (food) => ActionChip(
                           avatar: const Icon(Icons.add, size: 16),
-                          label: Text(food.name),
+                          label: Text(
+                              '${food.name} (${food.nutrition.calories.round()} kcal)'),
                           onPressed: () => onSavedFoodTap(food),
                         ),
                       )
@@ -1290,6 +1507,19 @@ class _FoodPage extends StatelessWidget {
                   ],
                 ),
               ],
+              if (scanBaseEstimate != null) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: scanServingsCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Servings consumed',
+                    helperText: 'Must be greater than 0',
+                  ),
+                  onChanged: onScanServingChanged,
+                ),
+              ],
               if (parsedFoodItems.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 Text(
@@ -1333,6 +1563,14 @@ class _FoodPage extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: AppPill(
+                  label: '${calories.round()} kcal',
+                  color: AppTheme.gray500,
+                ),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -1372,7 +1610,7 @@ class _FoodPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "Today's Meals",
+                'Logged Meals',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 14),
@@ -1393,6 +1631,25 @@ class _FoodPage extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  double _estimatedCalories() {
+    if (parsedFoodItems.isNotEmpty) {
+      return aggregateParsedFoodItems(
+        parsedFoodItems,
+        foodName: mealNameCtrl.text.trim(),
+      ).calories;
+    }
+    if (scanBaseEstimate != null) {
+      final servings = double.tryParse(scanServingsCtrl.text.trim());
+      if (servings != null && servings > 0) {
+        return scanBaseEstimate!.calories * servings;
+      }
+    }
+    final carbs = double.tryParse(carbsCtrl.text.trim()) ?? 0;
+    final protein = double.tryParse(proteinCtrl.text.trim()) ?? 0;
+    final fat = double.tryParse(fatCtrl.text.trim()) ?? 0;
+    return carbs * 4 + protein * 4 + fat * 9;
   }
 }
 
@@ -1448,7 +1705,7 @@ class _ParsedFoodRow extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 Text(
-                  '${nutrition.carbsG.round()}g C - ${nutrition.proteinG.round()}g P - ${nutrition.fatG.round()}g F',
+                  '${nutrition.calories.round()} kcal - ${nutrition.carbsG.round()}g C - ${nutrition.proteinG.round()}g P - ${nutrition.fatG.round()}g F',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],
@@ -1510,6 +1767,10 @@ class _MealTile extends StatelessWidget {
             runSpacing: 8,
             children: [
               AppPill(
+                label: '${nutrition.calories.round()} kcal',
+                color: AppTheme.gray500,
+              ),
+              AppPill(
                 label: '${nutrition.carbsG.round()}g C',
                 color: AppTheme.teal,
               ),
@@ -1531,20 +1792,44 @@ class _MealTile extends StatelessWidget {
 
 class _WorkoutPage extends StatelessWidget {
   final List<WorkoutSplit> splits;
-  final List<_LoggedWorkout> loggedWorkouts;
+  final List<TrainingSession> sessions;
   final TextEditingController workoutNameCtrl;
-  final TextEditingController workoutDurationCtrl;
+  final TextEditingController exerciseNameCtrl;
+  final TextEditingController exerciseSetsCtrl;
+  final TextEditingController exerciseRepsCtrl;
+  final TextEditingController exerciseNotesCtrl;
+  final DateTime? activeWorkoutStart;
+  final Duration activeElapsed;
+  final List<SplitExercise> activeExercises;
+  final SessionIntensity activeIntensity;
   final VoidCallback onPlan;
-  final VoidCallback onLog;
+  final VoidCallback onStart;
+  final ValueChanged<WorkoutSplit> onStartFromSplit;
+  final VoidCallback onAddExercise;
+  final VoidCallback onCancel;
+  final VoidCallback onFinish;
+  final ValueChanged<SessionIntensity> onIntensityChanged;
   final VoidCallback onSplits;
 
   const _WorkoutPage({
     required this.splits,
-    required this.loggedWorkouts,
+    required this.sessions,
     required this.workoutNameCtrl,
-    required this.workoutDurationCtrl,
+    required this.exerciseNameCtrl,
+    required this.exerciseSetsCtrl,
+    required this.exerciseRepsCtrl,
+    required this.exerciseNotesCtrl,
+    required this.activeWorkoutStart,
+    required this.activeElapsed,
+    required this.activeExercises,
+    required this.activeIntensity,
     required this.onPlan,
-    required this.onLog,
+    required this.onStart,
+    required this.onStartFromSplit,
+    required this.onAddExercise,
+    required this.onCancel,
+    required this.onFinish,
+    required this.onIntensityChanged,
     required this.onSplits,
   });
 
@@ -1579,36 +1864,27 @@ class _WorkoutPage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Quick Log', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 14),
-              TextField(
-                controller: workoutNameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Workout Name',
-                  hintText: 'Leg Day',
-                ),
+        activeWorkoutStart == null
+            ? _StartWorkoutCard(
+                splits: splits,
+                workoutNameCtrl: workoutNameCtrl,
+                onStart: onStart,
+                onStartFromSplit: onStartFromSplit,
+              )
+            : _ActiveWorkoutCard(
+                workoutNameCtrl: workoutNameCtrl,
+                exerciseNameCtrl: exerciseNameCtrl,
+                exerciseSetsCtrl: exerciseSetsCtrl,
+                exerciseRepsCtrl: exerciseRepsCtrl,
+                exerciseNotesCtrl: exerciseNotesCtrl,
+                elapsed: activeElapsed,
+                exercises: activeExercises,
+                intensity: activeIntensity,
+                onAddExercise: onAddExercise,
+                onCancel: onCancel,
+                onFinish: onFinish,
+                onIntensityChanged: onIntensityChanged,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: workoutDurationCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Duration (minutes)',
-                  hintText: '60',
-                ),
-              ),
-              const SizedBox(height: 16),
-              GradientButton(
-                onPressed: onLog,
-                child: const Text('Log Workout'),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 12),
         AppCard(
           child: Column(
@@ -1619,7 +1895,9 @@ class _WorkoutPage extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 14),
-              if (loggedWorkouts.isEmpty)
+              if (sessions
+                  .where((s) => !s.plannedAt.isAfter(DateTime.now()))
+                  .isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
@@ -1630,43 +1908,273 @@ class _WorkoutPage extends StatelessWidget {
                   ),
                 )
               else
-                ...loggedWorkouts.map(
-                  (workout) => Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFEEF2FF), Color(0xFFFAF5FF)],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.indigoBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                workout.name,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              Text(
-                                '${workout.durationMinutes} min - ${workout.dateLabel}',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
+                ...sessions
+                    .where((s) => !s.plannedAt.isAfter(DateTime.now()))
+                    .toList()
+                    .reversed
+                    .map(
+                      (workout) => Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFEEF2FF), Color(0xFFFAF5FF)],
                           ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.indigoBorder),
                         ),
-                        const Icon(Icons.check_circle, color: AppTheme.teal),
-                      ],
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    workout.displayName,
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  Text(
+                                    '${workout.durationMinutes} min - ${DateFormat('MMM d').format(workout.plannedAt)}',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.check_circle,
+                                color: AppTheme.teal),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _StartWorkoutCard extends StatelessWidget {
+  final List<WorkoutSplit> splits;
+  final TextEditingController workoutNameCtrl;
+  final VoidCallback onStart;
+  final ValueChanged<WorkoutSplit> onStartFromSplit;
+
+  const _StartWorkoutCard({
+    required this.splits,
+    required this.workoutNameCtrl,
+    required this.onStart,
+    required this.onStartFromSplit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Start Workout', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 14),
+          TextField(
+            controller: workoutNameCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Workout Name',
+              hintText: 'Leg Day',
+            ),
+          ),
+          const SizedBox(height: 14),
+          GradientButton(
+            onPressed: onStart,
+            child: const Text('Start Blank Workout'),
+          ),
+          if (splits.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text('Start from preset',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: splits
+                  .map(
+                    (split) => ActionChip(
+                      avatar: const Icon(Icons.play_arrow, size: 16),
+                      label: Text(split.name),
+                      onPressed: () => onStartFromSplit(split),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveWorkoutCard extends StatelessWidget {
+  final TextEditingController workoutNameCtrl;
+  final TextEditingController exerciseNameCtrl;
+  final TextEditingController exerciseSetsCtrl;
+  final TextEditingController exerciseRepsCtrl;
+  final TextEditingController exerciseNotesCtrl;
+  final Duration elapsed;
+  final List<SplitExercise> exercises;
+  final SessionIntensity intensity;
+  final VoidCallback onAddExercise;
+  final VoidCallback onCancel;
+  final VoidCallback onFinish;
+  final ValueChanged<SessionIntensity> onIntensityChanged;
+
+  const _ActiveWorkoutCard({
+    required this.workoutNameCtrl,
+    required this.exerciseNameCtrl,
+    required this.exerciseSetsCtrl,
+    required this.exerciseRepsCtrl,
+    required this.exerciseNotesCtrl,
+    required this.elapsed,
+    required this.exercises,
+    required this.intensity,
+    required this.onAddExercise,
+    required this.onCancel,
+    required this.onFinish,
+    required this.onIntensityChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final elapsedLabel =
+        '${elapsed.inHours.toString().padLeft(2, '0')}:${(elapsed.inMinutes % 60).toString().padLeft(2, '0')}:${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
+    return AppCard(
+      borderColor: AppTheme.teal.withAlpha(120),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Workout Running',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Text(
+                elapsedLabel,
+                style: const TextStyle(
+                  color: AppTheme.teal,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: workoutNameCtrl,
+            decoration: const InputDecoration(labelText: 'Workout Name'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<SessionIntensity>(
+            initialValue: intensity,
+            decoration: const InputDecoration(labelText: 'Intensity'),
+            items: SessionIntensity.values
+                .map(
+                  (value) => DropdownMenuItem(
+                    value: value,
+                    child: Text(value.name),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onIntensityChanged(value);
+            },
+          ),
+          const SizedBox(height: 16),
+          Text('Exercises', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ...exercises.map(
+            (exercise) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.inputFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.gray200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        exercise.name,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Text('${exercise.sets} x ${exercise.reps}'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: exerciseNameCtrl,
+                  decoration: const InputDecoration(labelText: 'Exercise'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: exerciseSetsCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Sets'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: exerciseRepsCtrl,
+                  decoration: const InputDecoration(labelText: 'Reps'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: exerciseNotesCtrl,
+            decoration: const InputDecoration(labelText: 'Exercise notes'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onAddExercise,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Exercise'),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onCancel,
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GradientButton(
+                  onPressed: onFinish,
+                  child: const Text('Stop and Save'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2970,9 +3478,15 @@ class _SettingsPage extends StatelessWidget {
                 onTap: onEditProfile,
               ),
               _SettingsTile(
-                title: 'Activity & Preferences',
+                title: 'Activity',
                 subtitle: _activityLabel(profile.activityBaseline),
                 onTap: onEditProfile,
+              ),
+              _SettingsTile(
+                title: 'Food Preferences',
+                subtitle:
+                    '${profile.foodPreferences.preferredFoods.length} liked, ${profile.foodPreferences.pantryFoods.length} available',
+                onTap: () => _showFoodPreferencesSheet(context, profile),
               ),
             ],
           ),
@@ -2985,7 +3499,7 @@ class _SettingsPage extends StatelessWidget {
               Text('About', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
               const Text(
-                'FuelWindow v1.0',
+                'Fuel v1.0',
                 style: TextStyle(color: AppTheme.gray600),
               ),
               const SizedBox(height: 4),
@@ -3017,6 +3531,135 @@ class _SettingsPage extends StatelessWidget {
         ActivityBaseline.veryActive => 'Very active',
         ActivityBaseline.extraActive => 'Extra active',
       };
+
+  void _showFoodPreferencesSheet(BuildContext context, UserProfile profile) {
+    final preferredCtrl = TextEditingController(
+      text: profile.foodPreferences.preferredFoods.join(', '),
+    );
+    final pantryCtrl = TextEditingController(
+      text: profile.foodPreferences.pantryFoods.join(', '),
+    );
+    final avoidedCtrl = TextEditingController(
+      text: profile.foodPreferences.avoidedFoods.join(', '),
+    );
+    var cookingMinutes = profile.foodPreferences.cookingTimePreferenceMinutes;
+    var dietStyle = profile.foodPreferences.dietStyle;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Food Preferences',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: preferredCtrl,
+                  decoration: const InputDecoration(labelText: 'Foods I like'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: pantryCtrl,
+                  decoration: const InputDecoration(labelText: 'Foods at home'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: avoidedCtrl,
+                  decoration: const InputDecoration(labelText: 'Avoided foods'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: dietStyle,
+                  decoration: const InputDecoration(labelText: 'Diet style'),
+                  items: const [
+                    'Balanced',
+                    'High-carb',
+                    'High-protein',
+                    'Vegetarian'
+                  ]
+                      .map((style) =>
+                          DropdownMenuItem(value: style, child: Text(style)))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setSheetState(() => dietStyle = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cooking time: $cookingMinutes min/meal',
+                      style: const TextStyle(
+                        color: AppTheme.gray700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Slider(
+                      value: cookingMinutes.toDouble(),
+                      min: 0,
+                      max: 45,
+                      divisions: 9,
+                      activeColor: AppTheme.teal,
+                      onChanged: (value) =>
+                          setSheetState(() => cookingMinutes = value.round()),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                GradientButton(
+                  onPressed: () {
+                    final updated = profile.copyWith(
+                      foodPreferences: FoodPreferences(
+                        preferredFoods: _csv(preferredCtrl.text),
+                        pantryFoods: _csv(pantryCtrl.text),
+                        avoidedFoods: _csv(avoidedCtrl.text),
+                        dietStyle: dietStyle,
+                        cookingTimePreferenceMinutes: cookingMinutes,
+                      ),
+                    );
+                    sheetContext.read<AppState>().updateProfile(updated);
+                    Navigator.pop(sheetContext);
+                  },
+                  child: const Text('Save Preferences'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      preferredCtrl.dispose();
+      pantryCtrl.dispose();
+      avoidedCtrl.dispose();
+    });
+  }
+
+  static List<String> _csv(String value) => value
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
 }
 
 class _BottomNav extends StatelessWidget {
@@ -3541,18 +4184,6 @@ class _WeekdayLabel extends StatelessWidget {
   }
 }
 
-class _LoggedWorkout {
-  final String name;
-  final int durationMinutes;
-  final String dateLabel;
-
-  const _LoggedWorkout({
-    required this.name,
-    required this.durationMinutes,
-    required this.dateLabel,
-  });
-}
-
 class _CalendarEvent {
   final String name;
   final String time;
@@ -3606,6 +4237,10 @@ List<_CalendarEvent> _eventsFor(AppState state, DateTime date) {
           gradient: AppTheme.brandGradient,
           foodLog: log,
           pills: [
+            _EventPill(
+              '${log.nutrition.calories.round()} kcal',
+              AppTheme.gray500,
+            ),
             _EventPill('${log.nutrition.carbsG.round()}g Carbs', AppTheme.teal),
             _EventPill(
               '${log.nutrition.proteinG.round()}g Protein',

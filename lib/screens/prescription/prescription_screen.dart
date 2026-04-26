@@ -376,6 +376,10 @@ class _FuelItemCardState extends State<_FuelItemCard> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    AppPill(
+                        label:
+                            '${(item.carbsG * 4 + item.proteinG * 4 + item.fatG * 9).round()} kcal',
+                        color: AppTheme.gray500),
                     if (item.carbsG > 0)
                       AppPill(
                           label: '${item.carbsG.round()}g C',

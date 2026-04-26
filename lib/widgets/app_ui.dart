@@ -149,7 +149,7 @@ class BrandHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'FuelWindow',
+                'Fuel',
                 style: TextStyle(
                   color: Color(0xFF312E81),
                   fontSize: 24,
