@@ -176,9 +176,21 @@ class GlycogenLegend extends StatelessWidget {
       runSpacing: 8,
       alignment: WrapAlignment.center,
       children: [
-        _LegendItem.swatch(color: AppTheme.teal, label: 'Liver'),
-        _LegendItem.swatch(color: AppTheme.amber, label: 'Muscle'),
-        _LegendItem.swatch(color: AppTheme.coral, label: 'BG proxy'),
+        _LegendItem.swatch(
+          color: AppTheme.teal,
+          label: 'Liver',
+          info: _MetricInfo.liver,
+        ),
+        _LegendItem.swatch(
+          color: AppTheme.amber,
+          label: 'Muscle',
+          info: _MetricInfo.muscle,
+        ),
+        _LegendItem.swatch(
+          color: AppTheme.coral,
+          label: 'BG proxy',
+          info: _MetricInfo.bgProxy,
+        ),
         _LegendItem.dashed(color: AppTheme.gray500, label: 'Targets'),
       ],
     );
@@ -189,20 +201,23 @@ class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
   final bool dashed;
+  final _MetricInfo? info;
 
   const _LegendItem.swatch({
     required this.color,
     required this.label,
+    this.info,
   }) : dashed = false;
 
   const _LegendItem.dashed({
     required this.color,
     required this.label,
-  }) : dashed = true;
+  })  : dashed = true,
+        info = null;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final content = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         dashed ? _dash(color) : _dot(color),
@@ -211,7 +226,22 @@ class _LegendItem extends StatelessWidget {
           label,
           style: const TextStyle(fontSize: 12, color: AppTheme.gray600),
         ),
+        if (info != null) ...[
+          const SizedBox(width: 3),
+          Icon(Icons.info_outline, size: 12, color: color),
+        ],
       ],
+    );
+
+    if (info == null) return content;
+
+    return InkWell(
+      onTap: () => _showMetricInfo(context, info!),
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        child: content,
+      ),
     );
   }
 
@@ -226,6 +256,99 @@ class _LegendItem extends StatelessWidget {
         height: 10,
         child: CustomPaint(painter: _DashedLegendPainter(c)),
       );
+
+  void _showMetricInfo(BuildContext context, _MetricInfo info) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(28),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(info.icon, color: color, size: 19),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  info.title,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              info.body,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              info.hint,
+              style: const TextStyle(
+                color: AppTheme.gray500,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricInfo {
+  final String title;
+  final String body;
+  final String hint;
+  final IconData icon;
+
+  const _MetricInfo({
+    required this.title,
+    required this.body,
+    required this.hint,
+    required this.icon,
+  });
+
+  static const liver = _MetricInfo(
+    title: 'Liver Glycogen',
+    body:
+        'Liver glycogen is stored carbohydrate that helps keep blood glucose steady between meals and during training. It is a smaller tank than muscle glycogen and can drop quickly overnight or during long sessions.',
+    hint:
+        'Higher liver stores usually mean steadier energy and fewer fasted-session dips.',
+    icon: Icons.water_drop_outlined,
+  );
+
+  static const muscle = _MetricInfo(
+    title: 'Muscle Glycogen',
+    body:
+        'Muscle glycogen is stored carbohydrate inside working muscle. It is the main fuel reserve for lifting, sprinting, intervals, and other high-intensity work.',
+    hint:
+        'If this line is low before a hard session, carbs 1-3 hours before training become more important.',
+    icon: Icons.fitness_center,
+  );
+
+  static const bgProxy = _MetricInfo(
+    title: 'BG Proxy',
+    body:
+        'BG proxy is a simplified 0-100 estimate of blood-glucose availability, not a medical glucose reading. It rises after meals and trends lower during fasting or exercise.',
+    hint:
+        'Use it as a trend signal for fueling timing, not as a clinical blood sugar value.',
+    icon: Icons.monitor_heart_outlined,
+  );
 }
 
 class _DashedLegendPainter extends CustomPainter {
