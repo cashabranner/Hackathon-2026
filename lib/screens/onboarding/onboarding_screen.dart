@@ -925,9 +925,9 @@ class _WorkoutFrequencyPage extends StatelessWidget {
           _SliderField(
             label: 'Gym days/week: $gymDaysPerWeek',
             value: gymDaysPerWeek.toDouble(),
-            min: 3,
-            max: 6,
-            divisions: 3,
+            min: 1,
+            max: 7,
+            divisions: 6,
             onChanged: (value) => onGymDaysChanged(value.round()),
           ),
           _SliderField(
@@ -1187,9 +1187,9 @@ class _PreferencesPage extends StatelessWidget {
           _SliderField(
             label: 'Gym days/week: $gymDaysPerWeek',
             value: gymDaysPerWeek.toDouble(),
-            min: 3,
-            max: 6,
-            divisions: 3,
+            min: 1,
+            max: 7,
+            divisions: 6,
             onChanged: (value) => onGymDaysChanged(value.round()),
           ),
           _SliderField(

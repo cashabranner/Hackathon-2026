@@ -1736,6 +1736,144 @@ class _FuelPrescriptionCard extends StatelessWidget {
   }
 }
 
+class _NutrientRecommendationsCard extends StatelessWidget {
+  final MetabolicState state;
+
+  const _NutrientRecommendationsCard({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final caloriesTarget = state.tdeeKcal;
+    final carbsTarget = state.tdeeKcal * 0.45 / 4;
+    final proteinTarget = state.leanBodyMassKg * 2;
+    final fatTarget = state.tdeeKcal * 0.25 / 9;
+
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppTheme.teal.withAlpha(24),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.insights,
+                  color: AppTheme.teal,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Nutrient Recommendations',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _NutrientMetricTile(
+                label: 'Calories',
+                value: state.totalCalories.round().toString(),
+                target: '${caloriesTarget.round()} kcal',
+                color: AppTheme.gray700,
+              ),
+              const SizedBox(width: 8),
+              _NutrientMetricTile(
+                label: 'Carbs',
+                value: '${state.totalCarbsG.round()}g',
+                target: '${carbsTarget.round()}g',
+                color: AppTheme.teal,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _NutrientMetricTile(
+                label: 'Protein',
+                value: '${state.totalProteinG.round()}g',
+                target: '${proteinTarget.round()}g',
+                color: AppTheme.amber,
+              ),
+              const SizedBox(width: 8),
+              _NutrientMetricTile(
+                label: 'Fat',
+                value: '${state.totalFatG.round()}g',
+                target: '${fatTarget.round()}g',
+                color: AppTheme.coral,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NutrientMetricTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final String target;
+  final Color color;
+
+  const _NutrientMetricTile({
+    required this.label,
+    required this.value,
+    required this.target,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withAlpha(18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withAlpha(70)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.gray600,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'of $target',
+              style: const TextStyle(color: AppTheme.gray500, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FoodPage extends StatelessWidget {
   final AppState appState;
   final TextEditingController mealNameCtrl;
@@ -1807,6 +1945,10 @@ class _FoodPage extends StatelessWidget {
       children: [
         Text('Log Food', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 16),
+        if (appState.metabolicState != null) ...[
+          _NutrientRecommendationsCard(state: appState.metabolicState!),
+          const SizedBox(height: 12),
+        ],
         AppCard(
           gradient: const LinearGradient(
             colors: [Color(0xFFFAF5FF), Color(0xFFEEF2FF)],
