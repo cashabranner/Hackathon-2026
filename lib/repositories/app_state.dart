@@ -174,6 +174,7 @@ class AppState extends ChangeNotifier {
     String rawInput, {
     NutritionEstimate? nutrition,
     String? source,
+    DateTime? loggedAt,
   }) async {
     if (_profile == null) return;
 
@@ -195,7 +196,7 @@ class AppState extends ChangeNotifier {
       id: 'local-${DateTime.now().millisecondsSinceEpoch}',
       userId: _profile!.id,
       rawInput: rawInput,
-      loggedAt: _now,
+      loggedAt: loggedAt ?? _now,
       nutrition: resolvedNutrition,
       source: resolvedSource,
     );

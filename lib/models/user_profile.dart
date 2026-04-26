@@ -102,6 +102,8 @@ class UserProfile {
   final FoodPreferences foodPreferences;
   final WorkoutPreferences workoutPreferences;
   final bool usesGlp1;
+  final int? wakeMinuteOfDay;
+  final int? sleepMinuteOfDay;
   final DateTime createdAt;
 
   const UserProfile({
@@ -116,6 +118,8 @@ class UserProfile {
     this.foodPreferences = const FoodPreferences(),
     this.workoutPreferences = const WorkoutPreferences(),
     this.usesGlp1 = false,
+    this.wakeMinuteOfDay,
+    this.sleepMinuteOfDay,
     required this.createdAt,
   });
 
@@ -139,6 +143,10 @@ class UserProfile {
     FoodPreferences? foodPreferences,
     WorkoutPreferences? workoutPreferences,
     bool? usesGlp1,
+    int? wakeMinuteOfDay,
+    int? sleepMinuteOfDay,
+    bool clearWakeTime = false,
+    bool clearSleepTime = false,
     DateTime? createdAt,
   }) {
     return UserProfile(
@@ -153,6 +161,10 @@ class UserProfile {
       foodPreferences: foodPreferences ?? this.foodPreferences,
       workoutPreferences: workoutPreferences ?? this.workoutPreferences,
       usesGlp1: usesGlp1 ?? this.usesGlp1,
+      wakeMinuteOfDay:
+          clearWakeTime ? null : wakeMinuteOfDay ?? this.wakeMinuteOfDay,
+      sleepMinuteOfDay:
+          clearSleepTime ? null : sleepMinuteOfDay ?? this.sleepMinuteOfDay,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -169,6 +181,8 @@ class UserProfile {
         'food_preferences': foodPreferences.toJson(),
         'workout_preferences': workoutPreferences.toJson(),
         'uses_glp1': usesGlp1,
+        'wake_minute_of_day': wakeMinuteOfDay,
+        'sleep_minute_of_day': sleepMinuteOfDay,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -190,6 +204,8 @@ class UserProfile {
           j['workout_preferences'] as Map<String, dynamic>?,
         ),
         usesGlp1: j['uses_glp1'] as bool? ?? false,
+        wakeMinuteOfDay: (j['wake_minute_of_day'] as num?)?.toInt(),
+        sleepMinuteOfDay: (j['sleep_minute_of_day'] as num?)?.toInt(),
         createdAt: DateTime.parse(j['created_at'] as String),
       );
 }

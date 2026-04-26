@@ -29,6 +29,8 @@ class DemoAccounts {
       heightCm: 180,
       weightKg: 82,
       activityBaseline: ActivityBaseline.moderatelyActive,
+      wakeMinuteOfDay: 6 * 60,
+      sleepMinuteOfDay: 22 * 60,
       createdAt: _epoch,
     ),
     foodLogsJson: [],
@@ -56,6 +58,8 @@ class DemoAccounts {
       heightCm: 165,
       weightKg: 63,
       activityBaseline: ActivityBaseline.moderatelyActive,
+      wakeMinuteOfDay: 7 * 60,
+      sleepMinuteOfDay: 23 * 60,
       createdAt: _epoch,
     ),
     foodLogsJson: [
@@ -113,6 +117,8 @@ class DemoAccounts {
       heightCm: 175,
       weightKg: 75,
       activityBaseline: ActivityBaseline.veryActive,
+      wakeMinuteOfDay: 7 * 60,
+      sleepMinuteOfDay: 23 * 60,
       createdAt: _epoch,
     ),
     foodLogsJson: [
@@ -193,6 +199,8 @@ class DemoAccounts {
       heightCm: 170,
       weightKg: 68,
       activityBaseline: ActivityBaseline.veryActive,
+      wakeMinuteOfDay: 6 * 60,
+      sleepMinuteOfDay: 22 * 60,
       createdAt: _epoch,
     ),
     foodLogsJson: [

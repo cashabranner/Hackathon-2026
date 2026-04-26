@@ -21,6 +21,7 @@ import '../../services/computer_image_picker_stub.dart'
     if (dart.library.html) '../../services/computer_image_picker_web.dart';
 import '../../repositories/app_state.dart';
 import '../../services/food_parser.dart';
+import '../../services/meal_timing_engine.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_ui.dart';
 import '../../widgets/glycogen_chart.dart';
@@ -54,6 +55,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<ParsedFoodItem> _parsedFoodItems = [];
   NutritionEstimate? _scanBaseEstimate;
   final _scanServingsCtrl = TextEditingController(text: '1');
+  DateTime? _selectedMealTime;
+  bool _showRecommendedMealTimes = false;
+  bool _selectedMealTimeFromRecommendation = false;
 
   final _workoutNameCtrl = TextEditingController();
   final _workoutDurationCtrl = TextEditingController(text: '60');
@@ -180,6 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           name,
           nutrition: estimate,
           source: 'manual',
+          loggedAt: _selectedMealTime,
         );
 
     if (!mounted) return;
@@ -192,6 +197,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _parsedFoodItems = [];
       _scanBaseEstimate = null;
       _scanServingsCtrl.text = '1';
+      _selectedMealTime = null;
+      _showRecommendedMealTimes = false;
+      _selectedMealTimeFromRecommendation = false;
     });
     _showSnack('Meal added.');
   }
@@ -225,6 +233,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
       _scanLabelStatus = 'Saved food ready';
     });
+  }
+
+  void _useMealTimeRecommendation(MealTimingRecommendation recommendation) {
+    setState(() {
+      _selectedMealTime = recommendation.time;
+      _showRecommendedMealTimes = false;
+      _selectedMealTimeFromRecommendation = true;
+    });
+  }
+
+  Future<void> _pickManualMealTime() async {
+    final appState = context.read<AppState>();
+    final initial = _selectedMealTime ?? appState.now;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (picked == null || !mounted) return;
+
+    final day = appState.now;
+    setState(() {
+      _selectedMealTime = DateTime(
+        day.year,
+        day.month,
+        day.day,
+        picked.hour,
+        picked.minute,
+      );
+      _showRecommendedMealTimes = false;
+      _selectedMealTimeFromRecommendation = false;
+    });
+  }
+
+  void _toggleRecommendedMealTimes() {
+    setState(() => _showRecommendedMealTimes = !_showRecommendedMealTimes);
   }
 
   NutritionEstimate? _scaledScanEstimate(String fallbackName) {
@@ -590,6 +633,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _selectedDate = state.now;
       _dateInitialized = true;
     }
+    final mealTimingPlan = MealTimingEngine.buildDailyPlan(
+      day: state.now,
+      sessions: state.sessions,
+      profile: profile,
+    );
 
     return Scaffold(
       body: GradientShell(
@@ -615,6 +663,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _HomePage(
                             state: state,
                             metabolicState: metabolicState,
+                            mealTimingPlan: mealTimingPlan,
                             onPlanLift: () => context.push('/lift-planner'),
                             onLogFood: () =>
                                 setState(() => _tab = _MainTab.food),
@@ -636,6 +685,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             scanBaseEstimate: _scanBaseEstimate,
                             scanServingsCtrl: _scanServingsCtrl,
                             parsedFoodItems: _parsedFoodItems,
+                            mealTimingPlan: mealTimingPlan,
+                            selectedMealTime: _selectedMealTime,
+                            showRecommendedMealTimes: _showRecommendedMealTimes,
+                            selectedMealTimeFromRecommendation:
+                                _selectedMealTimeFromRecommendation,
                             onAiChanged: (value) =>
                                 setState(() => _aiAutofill = value),
                             onAddMeal: _addMeal,
@@ -648,6 +702,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onScanServingChanged: _applyScanServings,
                             onParsedFoodServingChanged: _updateParsedFoodItem,
                             onSavedFoodTap: _useSavedFood,
+                            onMealTimeSelected: _useMealTimeRecommendation,
+                            onManualMealTime: _pickManualMealTime,
+                            onRecommendedTimesToggle:
+                                _toggleRecommendedMealTimes,
                             onScanLabel: _showScanLabelSheet,
                           ),
                         if (_tab == _MainTab.workout)
@@ -859,6 +917,7 @@ class _Header extends StatelessWidget {
 class _HomePage extends StatelessWidget {
   final AppState state;
   final MetabolicState metabolicState;
+  final List<MealTimingRecommendation> mealTimingPlan;
   final VoidCallback onPlanLift;
   final VoidCallback onLogFood;
   final VoidCallback onDetails;
@@ -867,6 +926,7 @@ class _HomePage extends StatelessWidget {
   const _HomePage({
     required this.state,
     required this.metabolicState,
+    required this.mealTimingPlan,
     required this.onPlanLift,
     required this.onLogFood,
     required this.onDetails,
@@ -881,6 +941,8 @@ class _HomePage extends StatelessWidget {
         const SizedBox(height: 12),
         MacroTotalsCard(state: metabolicState),
         const SizedBox(height: 12),
+        _MealTimingPlanCard(recommendations: mealTimingPlan),
+        const SizedBox(height: 12),
         _AiCoachCard(onTap: onCoach),
         const SizedBox(height: 12),
         _WorkoutCard(appState: state, onTap: onPlanLift),
@@ -893,6 +955,374 @@ class _HomePage extends StatelessWidget {
       ],
     );
   }
+}
+
+class _MealTimingPlanCard extends StatelessWidget {
+  final List<MealTimingRecommendation> recommendations;
+
+  const _MealTimingPlanCard({required this.recommendations});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.indigo.withAlpha(22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.schedule,
+                  color: AppTheme.indigo,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Meal Timing',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...recommendations
+              .take(6)
+              .map((item) => _MealTimingRow(recommendation: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MealTimingRow extends StatelessWidget {
+  final MealTimingRecommendation recommendation;
+
+  const _MealTimingRow({required this.recommendation});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _timingColor(recommendation.kind);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withAlpha(24),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child:
+                Icon(_timingIcon(recommendation.kind), color: color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  recommendation.label,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: 14,
+                      ),
+                ),
+                Text(
+                  recommendation.detail,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            DateFormat('h:mm a').format(recommendation.time),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MealTimeSelector extends StatelessWidget {
+  final List<MealTimingRecommendation> recommendations;
+  final DateTime? selectedMealTime;
+  final bool showRecommendations;
+  final bool selectedFromRecommendation;
+  final ValueChanged<MealTimingRecommendation> onSelected;
+  final VoidCallback onManualTime;
+  final VoidCallback onRecommendedTimesToggle;
+
+  const _MealTimeSelector({
+    required this.recommendations,
+    required this.selectedMealTime,
+    required this.showRecommendations,
+    required this.selectedFromRecommendation,
+    required this.onSelected,
+    required this.onManualTime,
+    required this.onRecommendedTimesToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final manualLabel = selectedMealTime != null && !selectedFromRecommendation
+        ? 'Selected ${DateFormat('h:mm a').format(selectedMealTime!)}'
+        : 'Pick a custom time';
+    final recommendedLabel = selectedFromRecommendation &&
+            selectedMealTime != null &&
+            !showRecommendations
+        ? 'Selected ${DateFormat('h:mm a').format(selectedMealTime!)}'
+        : '${recommendations.length} available';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('Meal time'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _MealTimeOptionBox(
+                label: 'Manual time',
+                value: manualLabel,
+                icon: Icons.edit_calendar_outlined,
+                selected: selectedMealTime != null &&
+                    !selectedFromRecommendation &&
+                    !showRecommendations,
+                onTap: onManualTime,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _MealTimeOptionBox(
+                label: 'Recommended times',
+                value: recommendedLabel,
+                icon: Icons.schedule,
+                selected: showRecommendations || selectedFromRecommendation,
+                onTap: onRecommendedTimesToggle,
+              ),
+            ),
+          ],
+        ),
+        if (showRecommendations) ...[
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.inputFill,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.indigoBorder),
+            ),
+            child: Column(
+              children: recommendations.take(6).map((recommendation) {
+                final selected = selectedMealTime != null &&
+                    _sameMinute(selectedMealTime!, recommendation.time);
+                return _RecommendedMealTimeRow(
+                  recommendation: recommendation,
+                  selected: selected,
+                  onTap: () => onSelected(recommendation),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MealTimeOptionBox extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MealTimeOptionBox({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppTheme.teal : AppTheme.gray600;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 78),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFECFDF5) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppTheme.teal : AppTheme.gray200,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.slate,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: const TextStyle(color: AppTheme.gray500, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecommendedMealTimeRow extends StatelessWidget {
+  final MealTimingRecommendation recommendation;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RecommendedMealTimeRow({
+    required this.recommendation,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _timingColor(recommendation.kind);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.check_circle : _timingIcon(recommendation.kind),
+              color: selected ? AppTheme.teal : color,
+              size: 19,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recommendation.label,
+                    style: const TextStyle(
+                      color: AppTheme.slate,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    recommendation.detail,
+                    style: const TextStyle(
+                      color: AppTheme.gray600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              DateFormat('h:mm a').format(recommendation.time),
+              style: TextStyle(
+                color: selected ? AppTheme.teal : color,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppTheme.gray700,
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+Color _timingColor(MealTimingKind kind) => switch (kind) {
+      MealTimingKind.breakfast => AppTheme.amber,
+      MealTimingKind.lunch => AppTheme.teal,
+      MealTimingKind.dinner => AppTheme.indigo,
+      MealTimingKind.preWorkoutMeal => AppTheme.purple,
+      MealTimingKind.preWorkoutSnack => AppTheme.coral,
+      MealTimingKind.postWorkoutMeal => AppTheme.emerald,
+    };
+
+IconData _timingIcon(MealTimingKind kind) => switch (kind) {
+      MealTimingKind.breakfast => Icons.wb_sunny_outlined,
+      MealTimingKind.lunch => Icons.restaurant_menu,
+      MealTimingKind.dinner => Icons.nightlight_round,
+      MealTimingKind.preWorkoutMeal => Icons.fitness_center,
+      MealTimingKind.preWorkoutSnack => Icons.flash_on,
+      MealTimingKind.postWorkoutMeal => Icons.restart_alt,
+    };
+
+bool _sameMinute(DateTime a, DateTime b) {
+  return a.year == b.year &&
+      a.month == b.month &&
+      a.day == b.day &&
+      a.hour == b.hour &&
+      a.minute == b.minute;
+}
+
+String _heightSummary(double heightCm) {
+  final totalInches = (heightCm / 2.54).round();
+  final feet = totalInches ~/ 12;
+  final inches = totalInches % 12;
+  return '${heightCm.round()} cm ($feet ft $inches in)';
+}
+
+String _weightSummary(double weightKg) {
+  final pounds = (weightKg * 2.2046226218).round();
+  return '${weightKg.round()} kg ($pounds lb)';
 }
 
 class _MetabolicStateCard extends StatelessWidget {
@@ -1320,6 +1750,10 @@ class _FoodPage extends StatelessWidget {
   final NutritionEstimate? scanBaseEstimate;
   final TextEditingController scanServingsCtrl;
   final List<ParsedFoodItem> parsedFoodItems;
+  final List<MealTimingRecommendation> mealTimingPlan;
+  final DateTime? selectedMealTime;
+  final bool showRecommendedMealTimes;
+  final bool selectedMealTimeFromRecommendation;
   final ValueChanged<bool> onAiChanged;
   final VoidCallback onAddMeal;
   final VoidCallback onAutofill;
@@ -1327,6 +1761,9 @@ class _FoodPage extends StatelessWidget {
   final ValueChanged<String> onScanServingChanged;
   final void Function(int index, double servingQty) onParsedFoodServingChanged;
   final ValueChanged<SavedFood> onSavedFoodTap;
+  final ValueChanged<MealTimingRecommendation> onMealTimeSelected;
+  final VoidCallback onManualMealTime;
+  final VoidCallback onRecommendedTimesToggle;
   final VoidCallback onScanLabel;
 
   const _FoodPage({
@@ -1343,6 +1780,10 @@ class _FoodPage extends StatelessWidget {
     required this.scanBaseEstimate,
     required this.scanServingsCtrl,
     required this.parsedFoodItems,
+    required this.mealTimingPlan,
+    required this.selectedMealTime,
+    required this.showRecommendedMealTimes,
+    required this.selectedMealTimeFromRecommendation,
     required this.onAiChanged,
     required this.onAddMeal,
     required this.onAutofill,
@@ -1350,6 +1791,9 @@ class _FoodPage extends StatelessWidget {
     required this.onScanServingChanged,
     required this.onParsedFoodServingChanged,
     required this.onSavedFoodTap,
+    required this.onMealTimeSelected,
+    required this.onManualMealTime,
+    required this.onRecommendedTimesToggle,
     required this.onScanLabel,
   });
 
@@ -1445,6 +1889,19 @@ class _FoodPage extends StatelessWidget {
                 onChanged: onMealChanged,
                 onSubmitted: (_) => onAutofill(),
               ),
+              if (mealTimingPlan.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _MealTimeSelector(
+                  recommendations: mealTimingPlan,
+                  selectedMealTime: selectedMealTime,
+                  showRecommendations: showRecommendedMealTimes,
+                  selectedFromRecommendation:
+                      selectedMealTimeFromRecommendation,
+                  onSelected: onMealTimeSelected,
+                  onManualTime: onManualMealTime,
+                  onRecommendedTimesToggle: onRecommendedTimesToggle,
+                ),
+              ],
               if (aiAutofill && mealNameCtrl.text.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Row(
@@ -3474,7 +3931,7 @@ class _SettingsPage extends StatelessWidget {
               _SettingsTile(
                 title: 'Edit Biometrics',
                 subtitle:
-                    '${profile.ageYears} years, ${profile.heightCm.round()} cm, ${profile.weightKg.round()} kg',
+                    '${profile.ageYears} years, ${_heightSummary(profile.heightCm)}, ${_weightSummary(profile.weightKg)}',
                 onTap: onEditProfile,
               ),
               _SettingsTile(

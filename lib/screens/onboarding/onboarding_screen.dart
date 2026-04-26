@@ -32,6 +32,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   BiologicalSex _sex = BiologicalSex.male;
   double _heightCm = 175;
   double _weightKg = 75;
+  int? _wakeMinuteOfDay;
+  int? _sleepMinuteOfDay;
   ActivityBaseline _activity = ActivityBaseline.moderatelyActive;
   final Set<String> _allergies = {};
   final Set<String> _preferredWeekdays = {'Mon', 'Wed', 'Fri'};
@@ -86,6 +88,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       weightKg: _weightKg,
       activityBaseline: _activity,
       allergies: _allergies.toList(),
+      wakeMinuteOfDay: _wakeMinuteOfDay,
+      sleepMinuteOfDay: _sleepMinuteOfDay,
       foodPreferences: FoodPreferences(
         preferredFoods: _csv(_preferredFoodsCtrl.text),
         pantryFoods: _csv(_pantryFoodsCtrl.text),
@@ -215,10 +219,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           sex: _sex,
                           heightCm: _heightCm,
                           weightKg: _weightKg,
+                          wakeMinuteOfDay: _wakeMinuteOfDay,
+                          sleepMinuteOfDay: _sleepMinuteOfDay,
                           onAgeChanged: (v) => setState(() => _age = v),
                           onSexChanged: (v) => setState(() => _sex = v),
                           onHeightChanged: (v) => setState(() => _heightCm = v),
                           onWeightChanged: (v) => setState(() => _weightKg = v),
+                          onWakeChanged: (v) =>
+                              setState(() => _wakeMinuteOfDay = v),
+                          onSleepChanged: (v) =>
+                              setState(() => _sleepMinuteOfDay = v),
                           onNext: _next,
                         ),
                         _AllergiesSetupPage(
@@ -445,10 +455,14 @@ class _BiometricsPage extends StatelessWidget {
   final BiologicalSex sex;
   final double heightCm;
   final double weightKg;
+  final int? wakeMinuteOfDay;
+  final int? sleepMinuteOfDay;
   final void Function(int) onAgeChanged;
   final void Function(BiologicalSex) onSexChanged;
   final void Function(double) onHeightChanged;
   final void Function(double) onWeightChanged;
+  final void Function(int?) onWakeChanged;
+  final void Function(int?) onSleepChanged;
   final VoidCallback onNext;
 
   const _BiometricsPage({
@@ -457,10 +471,14 @@ class _BiometricsPage extends StatelessWidget {
     required this.sex,
     required this.heightCm,
     required this.weightKg,
+    required this.wakeMinuteOfDay,
+    required this.sleepMinuteOfDay,
     required this.onAgeChanged,
     required this.onSexChanged,
     required this.onHeightChanged,
     required this.onWeightChanged,
+    required this.onWakeChanged,
+    required this.onSleepChanged,
     required this.onNext,
   });
 
@@ -527,7 +545,7 @@ class _BiometricsPage extends StatelessWidget {
             onChanged: (v) => onAgeChanged(v.round()),
           ),
           _SliderField(
-            label: 'Height: ${heightCm.round()} cm',
+            label: 'Height: ${_heightLabel(heightCm)}',
             value: heightCm,
             min: 140,
             max: 220,
@@ -535,15 +553,105 @@ class _BiometricsPage extends StatelessWidget {
             onChanged: onHeightChanged,
           ),
           _SliderField(
-            label: 'Weight: ${weightKg.round()} kg',
+            label: 'Weight: ${_weightLabel(weightKg)}',
             value: weightKg,
             min: 40,
             max: 150,
             divisions: 110,
             onChanged: onWeightChanged,
           ),
+          const SizedBox(height: 4),
+          _SectionLabel('Daily rhythm (optional)'),
+          const SizedBox(height: 10),
+          _TimePreferenceTile(
+            label: 'Wake up',
+            minuteOfDay: wakeMinuteOfDay,
+            fallback: const TimeOfDay(hour: 7, minute: 0),
+            onChanged: onWakeChanged,
+          ),
+          const SizedBox(height: 10),
+          _TimePreferenceTile(
+            label: 'Sleep',
+            minuteOfDay: sleepMinuteOfDay,
+            fallback: const TimeOfDay(hour: 23, minute: 0),
+            onChanged: onSleepChanged,
+          ),
           const SizedBox(height: 20),
           GradientButton(onPressed: onNext, child: const Text('Continue')),
+        ],
+      ),
+    );
+  }
+
+  String _heightLabel(double heightCm) {
+    final totalInches = (heightCm / 2.54).round();
+    final feet = totalInches ~/ 12;
+    final inches = totalInches % 12;
+    return '${heightCm.round()} cm ($feet ft $inches in)';
+  }
+
+  String _weightLabel(double weightKg) {
+    final pounds = (weightKg * 2.2046226218).round();
+    return '${weightKg.round()} kg ($pounds lb)';
+  }
+}
+
+class _TimePreferenceTile extends StatelessWidget {
+  final String label;
+  final int? minuteOfDay;
+  final TimeOfDay fallback;
+  final void Function(int?) onChanged;
+
+  const _TimePreferenceTile({
+    required this.label,
+    required this.minuteOfDay,
+    required this.fallback,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = minuteOfDay == null
+        ? null
+        : TimeOfDay(hour: minuteOfDay! ~/ 60, minute: minuteOfDay! % 60);
+
+    return OutlinedButton(
+      onPressed: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: selected ?? fallback,
+        );
+        if (picked != null) {
+          onChanged(picked.hour * 60 + picked.minute);
+        }
+      },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppTheme.indigo,
+        backgroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        side: const BorderSide(color: AppTheme.indigoBorder),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.access_time, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              selected == null
+                  ? '$label: Not set'
+                  : '$label: ${selected.format(context)}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (selected != null)
+            IconButton(
+              onPressed: () => onChanged(null),
+              icon: const Icon(Icons.close, size: 18),
+              tooltip: 'Clear $label',
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              padding: EdgeInsets.zero,
+            ),
         ],
       ),
     );
