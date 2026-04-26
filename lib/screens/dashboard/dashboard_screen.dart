@@ -223,6 +223,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onLogFood: () =>
                                 setState(() => _tab = _MainTab.food),
                             onDetails: () => context.push('/prescription'),
+                            onCoach: () => context.push('/coach-chat'),
                           ),
                         if (_tab == _MainTab.food)
                           _FoodPage(
@@ -434,6 +435,7 @@ class _HomePage extends StatelessWidget {
   final VoidCallback onPlanLift;
   final VoidCallback onLogFood;
   final VoidCallback onDetails;
+  final VoidCallback onCoach;
 
   const _HomePage({
     required this.state,
@@ -441,6 +443,7 @@ class _HomePage extends StatelessWidget {
     required this.onPlanLift,
     required this.onLogFood,
     required this.onDetails,
+    required this.onCoach,
   });
 
   @override
@@ -450,6 +453,8 @@ class _HomePage extends StatelessWidget {
         _MetabolicStateCard(state: metabolicState),
         const SizedBox(height: 12),
         MacroTotalsCard(state: metabolicState),
+        const SizedBox(height: 12),
+        _AiCoachCard(onTap: onCoach),
         const SizedBox(height: 12),
         _WorkoutCard(appState: state, onTap: onPlanLift),
         const SizedBox(height: 12),
@@ -587,6 +592,54 @@ class _GlycogenBar extends StatelessWidget {
           style: const TextStyle(color: AppTheme.gray500, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+class _AiCoachCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AiCoachCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: AppCard(
+        padding: const EdgeInsets.all(18),
+        borderColor: const Color(0xFFE9D5FF),
+        color: const Color(0xFFFAF5FF),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppTheme.purple.withAlpha(26),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.auto_awesome, color: AppTheme.purple),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('AI Coach',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Recent fuel, glycogen, and training metrics',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppTheme.purple),
+          ],
+        ),
+      ),
     );
   }
 }

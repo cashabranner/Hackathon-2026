@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 import '../models/metabolic_state.dart';
 import '../theme/app_theme.dart';
 
+const double _liverTargetPct = 70;
+const double _muscleTargetPct = 75;
+
 class GlycogenChart extends StatelessWidget {
   final List<GlycogenPoint> curve;
   final double liverCapacity;
@@ -85,6 +88,22 @@ class GlycogenChart extends StatelessWidget {
                 const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           borderData: FlBorderData(show: false),
+          extraLinesData: ExtraLinesData(
+            horizontalLines: [
+              _targetLine(
+                y: _liverTargetPct,
+                color: AppTheme.teal,
+                label: 'Liver target',
+                labelAlignment: Alignment.bottomRight,
+              ),
+              _targetLine(
+                y: _muscleTargetPct,
+                color: AppTheme.amber,
+                label: 'Muscle target',
+                labelAlignment: Alignment.topRight,
+              ),
+            ],
+          ),
           lineBarsData: [
             _line(liverSpots, AppTheme.teal, 'Liver'),
             _line(muscleSpots, AppTheme.amber, 'Muscle'),
@@ -102,6 +121,31 @@ class GlycogenChart extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  HorizontalLine _targetLine({
+    required double y,
+    required Color color,
+    required String label,
+    required Alignment labelAlignment,
+  }) {
+    return HorizontalLine(
+      y: y,
+      color: color.withAlpha(150),
+      strokeWidth: 1.5,
+      dashArray: const [7, 5],
+      label: HorizontalLineLabel(
+        show: true,
+        alignment: labelAlignment,
+        padding: const EdgeInsets.only(right: 4, bottom: 2),
+        style: TextStyle(
+          color: color.withAlpha(210),
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+        labelResolver: (_) => label,
       ),
     );
   }
@@ -127,23 +171,46 @@ class GlycogenLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Wrap(
+      spacing: 16,
+      runSpacing: 8,
+      alignment: WrapAlignment.center,
       children: [
-        _dot(AppTheme.teal),
+        _LegendItem.swatch(color: AppTheme.teal, label: 'Liver'),
+        _LegendItem.swatch(color: AppTheme.amber, label: 'Muscle'),
+        _LegendItem.swatch(color: AppTheme.coral, label: 'BG proxy'),
+        _LegendItem.dashed(color: AppTheme.gray500, label: 'Targets'),
+      ],
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool dashed;
+
+  const _LegendItem.swatch({
+    required this.color,
+    required this.label,
+  }) : dashed = false;
+
+  const _LegendItem.dashed({
+    required this.color,
+    required this.label,
+  }) : dashed = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        dashed ? _dash(color) : _dot(color),
         const SizedBox(width: 4),
-        const Text('Liver',
-            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
-        const SizedBox(width: 16),
-        _dot(AppTheme.amber),
-        const SizedBox(width: 4),
-        const Text('Muscle',
-            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
-        const SizedBox(width: 16),
-        _dot(AppTheme.coral),
-        const SizedBox(width: 4),
-        const Text('BG proxy',
-            style: TextStyle(fontSize: 12, color: AppTheme.gray600)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppTheme.gray600),
+        ),
       ],
     );
   }
@@ -153,4 +220,40 @@ class GlycogenLegend extends StatelessWidget {
         height: 10,
         decoration: BoxDecoration(color: c, shape: BoxShape.circle),
       );
+
+  Widget _dash(Color c) => SizedBox(
+        width: 18,
+        height: 10,
+        child: CustomPaint(painter: _DashedLegendPainter(c)),
+      );
+}
+
+class _DashedLegendPainter extends CustomPainter {
+  final Color color;
+
+  const _DashedLegendPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+    const dashWidth = 5.0;
+    const gapWidth = 3.0;
+    var x = 0.0;
+    final y = size.height / 2;
+    while (x < size.width) {
+      canvas.drawLine(
+        Offset(x, y),
+        Offset((x + dashWidth).clamp(0, size.width), y),
+        paint,
+      );
+      x += dashWidth + gapWidth;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedLegendPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

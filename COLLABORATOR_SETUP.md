@@ -48,6 +48,7 @@ Fill in these public Supabase values:
 SUPABASE_URL=https://xdclhtejfrethopywdxb.supabase.co
 SUPABASE_ANON_KEY=<public-supabase-publishable-or-anon-key>
 FOOD_PARSER_URL=https://xdclhtejfrethopywdxb.supabase.co/functions/v1/food-parser
+COACH_CHAT_URL=https://xdclhtejfrethopywdxb.supabase.co/functions/v1/coach-chat
 ```
 
 Do not put Gemini, OpenAI, or other private AI provider keys in `.env`.
@@ -78,7 +79,7 @@ Run the app with `.env` values passed to Flutter:
 
 ```powershell
 $defines = Get-Content .env | Where-Object {
-  $_ -match '^\s*(SUPABASE_URL|SUPABASE_ANON_KEY|FOOD_PARSER_URL)\s*='
+  $_ -match '^\s*(SUPABASE_URL|SUPABASE_ANON_KEY|FOOD_PARSER_URL|COACH_CHAT_URL)\s*='
 } | ForEach-Object {
   "--dart-define=$($_.Trim())"
 }
@@ -103,6 +104,14 @@ In the app's food preview:
 - `AI estimate` means the Supabase/Gemini parser was used.
 - `Local estimate` means the fallback parser was used.
 
+The AI Coach page sends recent dashboard metrics and chat messages to:
+
+```text
+https://xdclhtejfrethopywdxb.supabase.co/functions/v1/coach-chat
+```
+
+The same server-side Gemini secret is used for coach replies.
+
 ## 6. Supabase Access For Maintainers
 
 Collaborators who only run the app need the public Supabase URL and publishable/anon key.
@@ -120,6 +129,7 @@ npx.cmd -y supabase@latest login
 npx.cmd -y supabase@latest link --project-ref xdclhtejfrethopywdxb
 npx.cmd -y supabase@latest db push
 npx.cmd -y supabase@latest functions deploy food-parser --no-verify-jwt
+npx.cmd -y supabase@latest functions deploy coach-chat --no-verify-jwt
 ```
 
 To update the server-side Gemini key, set the Supabase Edge Function secret:

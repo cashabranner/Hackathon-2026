@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import 'repositories/app_state.dart';
+import 'screens/coach_chat/coach_chat_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/food_log/food_log_screen.dart';
 import 'screens/lift_planner/lift_planner_screen.dart';
@@ -27,6 +28,10 @@ GoRouter buildRouter(AppState appState) {
       GoRoute(
         path: '/dashboard',
         builder: (ctx, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/coach-chat',
+        builder: (ctx, state) => const CoachChatScreen(),
       ),
       GoRoute(
         path: '/food-log',
