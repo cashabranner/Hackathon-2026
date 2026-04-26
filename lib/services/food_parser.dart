@@ -8,6 +8,8 @@ import '../models/nutrition_estimate.dart';
 /// Uses a local keyword database for demo. When Supabase Edge Function
 /// credentials are present, the real implementation can delegate there.
 class FoodParser {
+  static const int maxNutritionLabelImageBytes = 8 * 1024 * 1024;
+
   /// Parse free-text food description; returns best-effort local estimate.
   static NutritionEstimate parseText(String input,
       {List<String> allergies = const []}) {
@@ -50,11 +52,15 @@ class FoodParser {
   }
 
   /// Parse through the Supabase Edge Function when remote parsing is enabled.
-  /// Input: free-text description (and optionally image metadata).
+  /// Input: free-text description or nutrition label image bytes.
   /// Output: NutritionEstimate
   ///
   /// Edge Function request shape:
-  ///   { "description": string, "image_url": string? }
+  ///   {
+  ///     "description": string?,
+  ///     "image_base64": string?,
+  ///     "mime_type": string?
+  ///   }
   ///
   /// Edge Function response shape:
   ///   {
@@ -75,7 +81,65 @@ class FoodParser {
     String input,
     String edgeFunctionUrl,
     String anonKey,
-  ) async {
+  ) {
+    return _parseRemote(
+      buildRemoteRequestBody(description: input),
+      edgeFunctionUrl,
+      anonKey,
+    );
+  }
+
+  static Future<NutritionEstimate> parseNutritionLabelImageRemote({
+    required List<int> bytes,
+    required String mimeType,
+    required String edgeFunctionUrl,
+    required String anonKey,
+    http.Client? client,
+  }) {
+    return _parseRemote(
+      buildRemoteRequestBody(imageBytes: bytes, mimeType: mimeType),
+      edgeFunctionUrl,
+      anonKey,
+      client: client,
+    );
+  }
+
+  static Map<String, dynamic> buildRemoteRequestBody({
+    String? description,
+    List<int>? imageBytes,
+    String? mimeType,
+  }) {
+    final payload = <String, dynamic>{};
+    final trimmedDescription = description?.trim();
+    if (trimmedDescription != null && trimmedDescription.isNotEmpty) {
+      payload['description'] = trimmedDescription;
+    }
+
+    if (imageBytes != null) {
+      if (imageBytes.length > maxNutritionLabelImageBytes) {
+        throw const FoodParserException(
+          'Image is too large to scan. Choose an image under 8 MB.',
+        );
+      }
+
+      final normalizedMimeType = mimeType?.trim().toLowerCase();
+      if (normalizedMimeType == null || normalizedMimeType.isEmpty) {
+        throw const FoodParserException('Image MIME type is required.');
+      }
+
+      payload['image_base64'] = base64Encode(imageBytes);
+      payload['mime_type'] = normalizedMimeType;
+    }
+
+    return payload;
+  }
+
+  static Future<NutritionEstimate> _parseRemote(
+    Map<String, dynamic> payload,
+    String edgeFunctionUrl,
+    String anonKey, {
+    http.Client? client,
+  }) async {
     final uri = Uri.parse(edgeFunctionUrl);
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -83,13 +147,12 @@ class FoodParser {
       if (anonKey.isNotEmpty) 'Authorization': 'Bearer $anonKey',
     };
 
-    final response = await http.post(
-      uri,
-      headers: headers,
-      body: jsonEncode({'description': input}),
-    );
+    final body = jsonEncode(payload);
+    final response = client == null
+        ? await http.post(uri, headers: headers, body: body)
+        : await client.post(uri, headers: headers, body: body);
 
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeResponse(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map<String, dynamic>
           ? decoded['detail'] ?? decoded['error'] ?? decoded
@@ -108,6 +171,14 @@ class FoodParser {
     }
 
     return NutritionEstimate.fromJson(decoded);
+  }
+
+  static dynamic _decodeResponse(String body) {
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      throw FoodParserException('Remote food parser returned invalid JSON');
+    }
   }
 }
 

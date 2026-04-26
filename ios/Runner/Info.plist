@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Used to photograph food labels for nutrition parsing</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to choose food label images for nutrition parsing</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

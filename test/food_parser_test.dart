@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuelwindow/services/food_parser.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   group('FoodParser.parseText', () {
@@ -62,4 +66,76 @@ void main() {
       }
     });
   });
+
+  group('FoodParser remote image parsing', () {
+    test('Builds image request payload with base64 bytes and MIME type', () {
+      final payload = FoodParser.buildRemoteRequestBody(
+        imageBytes: [1, 2, 3, 4],
+        mimeType: 'IMAGE/JPEG',
+      );
+
+      expect(payload, {
+        'image_base64': base64Encode([1, 2, 3, 4]),
+        'mime_type': 'image/jpeg',
+      });
+    });
+
+    test('Rejects oversized images before upload', () {
+      expect(
+        () => FoodParser.buildRemoteRequestBody(
+          imageBytes:
+              List.filled(FoodParser.maxNutritionLabelImageBytes + 1, 0),
+          mimeType: 'image/jpeg',
+        ),
+        throwsA(isA<FoodParserException>()),
+      );
+    });
+
+    test('Sends image payload and parses remote nutrition response', () async {
+      Map<String, dynamic>? sentPayload;
+      final client = MockClient((request) async {
+        sentPayload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(request.headers['apikey'], 'anon-key');
+        expect(request.headers['Authorization'], 'Bearer anon-key');
+        return http.Response(jsonEncode(_nutritionJson()), 200);
+      });
+
+      final result = await FoodParser.parseNutritionLabelImageRemote(
+        bytes: [10, 20, 30],
+        mimeType: 'image/png',
+        edgeFunctionUrl: 'https://example.test/functions/v1/food-parser',
+        anonKey: 'anon-key',
+        client: client,
+      );
+
+      expect(sentPayload?['image_base64'], base64Encode([10, 20, 30]));
+      expect(sentPayload?['mime_type'], 'image/png');
+      expect(sentPayload?.containsKey('description'), isFalse);
+      expect(result.foodName, 'Granola Bar');
+      expect(result.carbsG, 24);
+    });
+  });
 }
+
+Map<String, dynamic> _nutritionJson() => {
+      'food_name': 'Granola Bar',
+      'grams': 48,
+      'carbs_g': 24,
+      'glucose_g': 18,
+      'fructose_g': 3,
+      'fiber_g': 3,
+      'protein_g': 5,
+      'fat_g': 7,
+      'calories': 180,
+      'micros': {
+        'magnesium_mg': 0,
+        'potassium_mg': 0,
+        'sodium_mg': 95,
+        'iron_mg': 0,
+        'zinc_mg': 0,
+        'b12_mcg': 0,
+        'vitamin_d_iu': 0,
+      },
+      'is_high_fat': false,
+      'is_high_fiber': false,
+    };

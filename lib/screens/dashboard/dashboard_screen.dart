@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +14,8 @@ import '../../models/nutrition_estimate.dart';
 import '../../models/training_session.dart';
 import '../../models/user_profile.dart';
 import '../../models/workout_split.dart';
+import '../../services/computer_image_picker_stub.dart'
+    if (dart.library.html) '../../services/computer_image_picker_web.dart';
 import '../../repositories/app_state.dart';
 import '../../services/food_parser.dart';
 import '../../theme/app_theme.dart';
@@ -37,8 +42,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _proteinCtrl = TextEditingController();
   final _fatCtrl = TextEditingController();
   final _mealFocus = FocusNode();
+  final _imagePicker = ImagePicker();
   bool _aiAutofill = true;
   bool _isAutofilling = false;
+  bool _isScanningLabel = false;
+  String? _scanLabelStatus;
 
   final _workoutNameCtrl = TextEditingController();
   final _workoutDurationCtrl = TextEditingController(text: '60');
@@ -145,7 +153,170 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _carbsCtrl.clear();
     _proteinCtrl.clear();
     _fatCtrl.clear();
+    setState(() => _scanLabelStatus = null);
     _showSnack('Meal added.');
+  }
+
+  Future<void> _showScanLabelSheet() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined,
+                    color: AppTheme.indigo),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined,
+                    color: AppTheme.indigo),
+                title: const Text('Choose Existing Image'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.close, color: AppTheme.gray500),
+                title: const Text('Cancel'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null) return;
+    if (source == ImageSource.gallery && kIsWeb) {
+      await _scanComputerImage();
+    } else {
+      await _scanNutritionLabel(source);
+    }
+  }
+
+  Future<void> _scanComputerImage() async {
+    if (!AppConfig.hasRemoteFoodParser) {
+      _showErrorSnack('AI label scanning is not configured.');
+      return;
+    }
+
+    try {
+      final image = await pickImageFromComputer();
+      if (image == null) return;
+
+      if (image.bytes.length > FoodParser.maxNutritionLabelImageBytes) {
+        _showErrorSnack('Image is too large. Choose an image under 8 MB.');
+        return;
+      }
+
+      setState(() {
+        _isScanningLabel = true;
+        _scanLabelStatus = null;
+      });
+
+      await _scanSelectedBytes(
+        bytes: image.bytes,
+        mimeType: image.mimeType,
+      );
+    } catch (err) {
+      if (mounted) _showErrorSnack('Could not upload image: $err');
+    } finally {
+      if (mounted) setState(() => _isScanningLabel = false);
+    }
+  }
+
+  Future<void> _scanNutritionLabel(ImageSource source) async {
+    if (!AppConfig.hasRemoteFoodParser) {
+      _showErrorSnack('AI label scanning is not configured.');
+      return;
+    }
+
+    try {
+      final image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 82,
+      );
+      if (image == null) return;
+
+      final bytes = await image.readAsBytes();
+      if (bytes.length > FoodParser.maxNutritionLabelImageBytes) {
+        _showErrorSnack('Image is too large. Choose an image under 8 MB.');
+        return;
+      }
+
+      setState(() {
+        _isScanningLabel = true;
+        _scanLabelStatus = null;
+      });
+
+      await _scanSelectedBytes(
+        bytes: bytes,
+        mimeType: _mimeTypeForPickedImage(image),
+      );
+    } on FoodParserException catch (err) {
+      if (mounted) _showErrorSnack(err.message);
+    } on PlatformException catch (err) {
+      if (mounted) _showErrorSnack(_imagePickerErrorMessage(err));
+    } catch (err) {
+      if (mounted) _showErrorSnack('Could not scan label: $err');
+    } finally {
+      if (mounted) {
+        setState(() => _isScanningLabel = false);
+      }
+    }
+  }
+
+  Future<void> _scanSelectedBytes({
+    required List<int> bytes,
+    required String mimeType,
+  }) async {
+    final estimate = await FoodParser.parseNutritionLabelImageRemote(
+      bytes: bytes,
+      mimeType: mimeType,
+      edgeFunctionUrl: AppConfig.foodParserUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _mealNameCtrl.text = estimate.foodName;
+      _carbsCtrl.text = estimate.carbsG.round().toString();
+      _proteinCtrl.text = estimate.proteinG.round().toString();
+      _fatCtrl.text = estimate.fatG.round().toString();
+      _scanLabelStatus = 'Scanned from label';
+    });
+    _showSnack('Label scanned. Review before adding.');
+  }
+
+  String _mimeTypeForPickedImage(XFile image) {
+    final fromPicker = image.mimeType?.trim().toLowerCase();
+    if (fromPicker != null && fromPicker.startsWith('image/')) {
+      return fromPicker;
+    }
+
+    final name = image.name.isNotEmpty ? image.name : image.path;
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.heic')) return 'image/heic';
+    if (lower.endsWith('.heif')) return 'image/heif';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  String _imagePickerErrorMessage(PlatformException err) {
+    if (err.code == 'channel-error') {
+      return 'Run the web app in Chrome to upload an image from this computer.';
+    }
+    return err.message ?? 'Could not open image picker.';
   }
 
   void _logWorkout() {
@@ -173,6 +344,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: AppTheme.teal,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showErrorSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.coral,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -235,14 +416,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             mealFocus: _mealFocus,
                             aiAutofill: _aiAutofill,
                             isAutofilling: _isAutofilling,
+                            isScanningLabel: _isScanningLabel,
+                            scanLabelStatus: _scanLabelStatus,
                             onAiChanged: (value) =>
                                 setState(() => _aiAutofill = value),
                             onAddMeal: _addMeal,
                             onAutofill: _autofillMacros,
                             onMealChanged: (_) => setState(() {}),
-                            onScanLabel: () => _showSnack(
-                              'Camera label scanning is ready for a device build.',
-                            ),
+                            onScanLabel: _showScanLabelSheet,
                           ),
                         if (_tab == _MainTab.workout)
                           _WorkoutPage(
@@ -852,6 +1033,8 @@ class _FoodPage extends StatelessWidget {
   final FocusNode mealFocus;
   final bool aiAutofill;
   final bool isAutofilling;
+  final bool isScanningLabel;
+  final String? scanLabelStatus;
   final ValueChanged<bool> onAiChanged;
   final VoidCallback onAddMeal;
   final VoidCallback onAutofill;
@@ -867,6 +1050,8 @@ class _FoodPage extends StatelessWidget {
     required this.mealFocus,
     required this.aiAutofill,
     required this.isAutofilling,
+    required this.isScanningLabel,
+    required this.scanLabelStatus,
     required this.onAiChanged,
     required this.onAddMeal,
     required this.onAutofill,
@@ -957,6 +1142,28 @@ class _FoodPage extends StatelessWidget {
                       style: TextStyle(color: AppTheme.purple)),
                 ),
               ],
+              if (isScanningLabel) ...[
+                const SizedBox(height: 14),
+                const Center(
+                  child: Text('Scanning label...',
+                      style: TextStyle(color: AppTheme.purple)),
+                ),
+              ],
+              if (scanLabelStatus != null && !isScanningLabel) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline,
+                        color: AppTheme.teal, size: 15),
+                    const SizedBox(width: 5),
+                    Text(
+                      scanLabelStatus!,
+                      style:
+                          const TextStyle(color: AppTheme.teal, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -990,7 +1197,7 @@ class _FoodPage extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: onScanLabel,
+                      onPressed: isScanningLabel ? null : onScanLabel,
                       icon: const Icon(Icons.photo_camera_outlined),
                       label: const Text('Scan Label'),
                       style: OutlinedButton.styleFrom(

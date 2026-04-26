@@ -4,7 +4,7 @@
 // Request  POST /functions/v1/food-parser
 // Requires Edge Function secret: OPENAI_API_KEY
 // The secret value is treated as a Gemini API key.
-// Body: { "description": string, "image_url"?: string }
+// Body: { "description"?: string, "image_base64"?: string, "mime_type"?: string }
 //
 // Response:
 // {
@@ -36,6 +36,8 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const maxImageBytes = 8 * 1024 * 1024;
 
 const nutritionSchema = {
   type: "object",
@@ -95,30 +97,76 @@ serve(async (req) => {
   }
 
   try {
-    const { description, image_url } = await req.json();
+    let body: {
+      description?: unknown;
+      image_base64?: unknown;
+      mime_type?: unknown;
+    };
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ error: "valid JSON body required" }, 400);
+    }
 
-    if (!description && !image_url) {
-      return new Response(
-        JSON.stringify({ error: "description or image_url required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const description = typeof body.description === "string"
+      ? body.description.trim()
+      : "";
+    const imageBase64Raw = typeof body.image_base64 === "string"
+      ? body.image_base64.trim()
+      : "";
+    let mimeType = typeof body.mime_type === "string"
+      ? body.mime_type.trim().toLowerCase()
+      : "";
+
+    if (!description && !imageBase64Raw) {
+      return jsonResponse({ error: "description or image_base64 required" }, 400);
+    }
+
+    let imageBase64 = "";
+    if (imageBase64Raw) {
+      const normalized = normalizeImageBase64(imageBase64Raw);
+      imageBase64 = normalized.base64;
+      mimeType = mimeType || normalized.mimeType;
+
+      if (!mimeType || !mimeType.startsWith("image/")) {
+        return jsonResponse({ error: "mime_type must be an image MIME type" }, 400);
+      }
+      if (!isBase64(imageBase64)) {
+        return jsonResponse({ error: "image_base64 must be valid base64 image data" }, 400);
+      }
+      if (base64ByteLength(imageBase64) > maxImageBytes) {
+        return jsonResponse({ error: "image is too large; use an image under 8 MB" }, 413);
+      }
     }
 
     const geminiKey = Deno.env.get("OPENAI_API_KEY") ?? Deno.env.get("OPEN_AI_KEY");
     if (!geminiKey) {
-      return new Response(
-        JSON.stringify({ error: "Gemini API key secret not set" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Gemini API key secret not set" }, 500);
     }
 
-    const prompt = `Estimate nutrition for this food description.
+    const prompt = imageBase64
+      ? `Read this packaged food nutrition facts label and estimate nutrition for the labeled serving.
+Return a single JSON object matching the configured schema. Use numbers, not strings.
+
+${description ? `Additional description: ${description}` : ""}
+
+Set food_name to the product or serving name if visible. Estimate missing glucose/fructose split from total carbohydrates and sugar context when the label does not provide it.`
+      : `Estimate nutrition for this food description.
 Return a single JSON object matching the configured schema. Use numbers, not strings.
 
 Food description: ${description}
-${image_url ? `Image URL: ${image_url}` : ""}
 
 Be as accurate as possible using USDA FoodData Central values. If multiple foods are described, aggregate them.`;
+
+    const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+    if (imageBase64) {
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: imageBase64,
+        },
+      });
+    }
 
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
       method: "POST",
@@ -130,7 +178,7 @@ Be as accurate as possible using USDA FoodData Central values. If multiple foods
         contents: [
           {
             role: "user",
-            parts: [{ text: prompt }],
+            parts,
           },
         ],
         generationConfig: {
@@ -147,50 +195,65 @@ Be as accurate as possible using USDA FoodData Central values. If multiple foods
 
     const aiResult = await response.json();
     if (!response.ok) {
-      return new Response(
-        JSON.stringify({
-          error: "Gemini request failed",
-          status: response.status,
-          detail: aiResult.error?.message ?? aiResult,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({
+        error: "Gemini request failed",
+        status: response.status,
+        detail: aiResult.error?.message ?? aiResult,
+      }, 502);
     }
 
     const content = aiResult.candidates?.[0]?.content?.parts
       ?.map((part: { text?: string }) => part.text ?? "")
       .join("") ?? "";
     if (!content.trim()) {
-      return new Response(
-        JSON.stringify({ error: "Gemini returned an empty response" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Gemini returned an empty response" }, 502);
     }
 
     let parsed;
     try {
       parsed = JSON.parse(extractJson(content));
     } catch (err) {
-      return new Response(
-        JSON.stringify({
-          error: "Gemini returned invalid JSON",
-          detail: String(err),
-          raw_preview: content.slice(0, 300),
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({
+        error: "Gemini returned invalid JSON",
+        detail: String(err),
+        raw_preview: content.slice(0, 300),
+      }, 502);
     }
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse(parsed);
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: String(err) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: String(err) }, 500);
   }
 });
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function normalizeImageBase64(raw: string): { base64: string; mimeType: string } {
+  const dataUrl = raw.match(/^data:(image\/[-+.\w]+);base64,(.+)$/is);
+  if (dataUrl) {
+    return {
+      mimeType: dataUrl[1].toLowerCase(),
+      base64: dataUrl[2].replace(/\s/g, ""),
+    };
+  }
+
+  return { mimeType: "", base64: raw.replace(/\s/g, "") };
+}
+
+function isBase64(value: string): boolean {
+  if (!value || value.length % 4 === 1) return false;
+  return /^[A-Za-z0-9+/]*={0,2}$/.test(value);
+}
+
+function base64ByteLength(value: string): number {
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return Math.floor((value.length * 3) / 4) - padding;
+}
 
 function extractJson(content: string): string {
   const trimmed = content.trim();
