@@ -103,6 +103,7 @@ function buildPrompt(metrics: unknown, messages: unknown[]): string {
 
 Use the user's recent metrics to give practical nutrition, recovery, and workout-timing advice.
 Prioritize glycogen readiness, macro timing, hydration/electrolytes when relevant, and the next planned training session.
+Always account for the user's workout split details, active food/fueling plan, and full stats summary when provided.
 Use the user's allergies and GLP-1 status if provided.
 Do not diagnose disease, prescribe medication, or give emergency guidance. If the user asks for medical advice, tell them to talk with a qualified clinician.
 Be concise, specific, and actionable. Prefer 3-6 short bullets or short paragraphs. Use grams and timing windows when the metrics support them.
