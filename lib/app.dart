@@ -38,6 +38,8 @@ class _FuelAppState extends State<FuelApp> {
           return MaterialApp.router(
             title: 'Fuel',
             theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            themeMode: context.watch<AppState>().themeMode,
             routerConfig: router,
             debugShowCheckedModeBanner: false,
           );

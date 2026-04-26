@@ -8,6 +8,8 @@ enum ActivityBaseline {
   extraActive,
 }
 
+enum LifterExperience { newLifter, intermediate, experienced }
+
 class FoodPreferences {
   final List<String> preferredFoods;
   final List<String> pantryFoods;
@@ -101,6 +103,7 @@ class UserProfile {
   final List<String> allergies;
   final FoodPreferences foodPreferences;
   final WorkoutPreferences workoutPreferences;
+  final LifterExperience lifterExperience;
   final bool usesGlp1;
   final int? wakeMinuteOfDay;
   final int? sleepMinuteOfDay;
@@ -117,6 +120,7 @@ class UserProfile {
     this.allergies = const [],
     this.foodPreferences = const FoodPreferences(),
     this.workoutPreferences = const WorkoutPreferences(),
+    this.lifterExperience = LifterExperience.newLifter,
     this.usesGlp1 = false,
     this.wakeMinuteOfDay,
     this.sleepMinuteOfDay,
@@ -142,6 +146,7 @@ class UserProfile {
     List<String>? allergies,
     FoodPreferences? foodPreferences,
     WorkoutPreferences? workoutPreferences,
+    LifterExperience? lifterExperience,
     bool? usesGlp1,
     int? wakeMinuteOfDay,
     int? sleepMinuteOfDay,
@@ -160,6 +165,7 @@ class UserProfile {
       allergies: allergies ?? this.allergies,
       foodPreferences: foodPreferences ?? this.foodPreferences,
       workoutPreferences: workoutPreferences ?? this.workoutPreferences,
+      lifterExperience: lifterExperience ?? this.lifterExperience,
       usesGlp1: usesGlp1 ?? this.usesGlp1,
       wakeMinuteOfDay:
           clearWakeTime ? null : wakeMinuteOfDay ?? this.wakeMinuteOfDay,
@@ -180,6 +186,7 @@ class UserProfile {
         'allergies': allergies,
         'food_preferences': foodPreferences.toJson(),
         'workout_preferences': workoutPreferences.toJson(),
+        'lifter_experience': lifterExperience.name,
         'uses_glp1': usesGlp1,
         'wake_minute_of_day': wakeMinuteOfDay,
         'sleep_minute_of_day': sleepMinuteOfDay,
@@ -202,6 +209,9 @@ class UserProfile {
         ),
         workoutPreferences: WorkoutPreferences.fromJson(
           j['workout_preferences'] as Map<String, dynamic>?,
+        ),
+        lifterExperience: LifterExperience.values.byName(
+          j['lifter_experience'] as String? ?? LifterExperience.newLifter.name,
         ),
         usesGlp1: j['uses_glp1'] as bool? ?? false,
         wakeMinuteOfDay: (j['wake_minute_of_day'] as num?)?.toInt(),

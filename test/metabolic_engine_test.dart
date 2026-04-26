@@ -3,6 +3,7 @@ import 'package:fuelwindow/models/food_log.dart';
 import 'package:fuelwindow/models/nutrition_estimate.dart';
 import 'package:fuelwindow/models/training_session.dart';
 import 'package:fuelwindow/models/user_profile.dart';
+import 'package:fuelwindow/models/workout_split.dart';
 import 'package:fuelwindow/services/metabolic_engine.dart';
 
 final _male75 = UserProfile(
@@ -307,6 +308,48 @@ void main() {
         DateTime(2026, 4, 25, 22),
       );
       expect(result.muscleGlycogenG, greaterThanOrEqualTo(0));
+    });
+
+    test('Exercise details scale session glycogen cost biologically', () {
+      final shortUpper = TrainingSession(
+        id: 'upper',
+        userId: 'test-m',
+        type: SessionType.fullBody,
+        plannedAt: DateTime(2026, 4, 25, 10),
+        durationMinutes: 60,
+        intensity: SessionIntensity.moderate,
+        plannedExercises: const [
+          SplitExercise(
+            name: 'Bench Press',
+            muscles: ['Chest', 'Triceps'],
+            sets: 2,
+            reps: '8',
+          ),
+        ],
+      );
+      final highVolumeLegs = shortUpper.copyWith(
+        id: 'legs',
+        intensity: SessionIntensity.high,
+        plannedExercises: const [
+          SplitExercise(
+            name: 'Barbell Squat',
+            muscles: ['Quads', 'Glutes', 'Hamstrings'],
+            sets: 5,
+            reps: '8-10',
+          ),
+          SplitExercise(
+            name: 'Walking Lunge',
+            muscles: ['Quads', 'Glutes', 'Hamstrings'],
+            sets: 4,
+            reps: '10/leg',
+          ),
+        ],
+      );
+
+      expect(
+        highVolumeLegs.estimatedMuscleGlycogenCostG,
+        greaterThan(shortUpper.estimatedMuscleGlycogenCostG),
+      );
     });
   });
 

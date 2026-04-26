@@ -1004,18 +1004,20 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Fuel',
                   style: TextStyle(
-                    color: Color(0xFF312E81),
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   profileName,
-                  style: const TextStyle(
-                    color: AppTheme.indigo,
+                  style: TextStyle(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? AppTheme.emerald
+                        : AppTheme.indigo,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -2633,8 +2635,8 @@ class _WorkoutPage extends StatelessWidget {
           children: [
             Expanded(
               child: _GradientActionTile(
-                label: 'My Splits',
-                subtitle: '${splits.length} custom splits',
+                label: 'My Routines',
+                subtitle: '${splits.length} workout routines',
                 icon: Icons.fitness_center,
                 gradient: AppTheme.indigoGradient,
                 onTap: onSplits,
@@ -3045,7 +3047,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Workout Splits',
+                  'Workout Routines',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -3079,7 +3081,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
               children: [
                 Icon(Icons.add, color: Colors.white, size: 20),
                 SizedBox(width: 8),
-                Text('Create Custom Split'),
+                Text('Create Custom Routine'),
               ],
             ),
           ),
@@ -3102,7 +3104,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
               ),
               Expanded(
                 child: Text(
-                  _editingIndex == null ? 'Create Split' : 'Edit Split',
+                  _editingIndex == null ? 'Create Routine' : 'Edit Routine',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -3119,7 +3121,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
                 TextField(
                   controller: _nameCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Split name',
+                    labelText: 'Routine name',
                     hintText: 'Push Strength, Leg Hypertrophy, Upper Pull',
                   ),
                 ),
@@ -3133,7 +3135,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
                   AppCard(
                     padding: const EdgeInsets.all(20),
                     child: Text(
-                      'Add exercises below to build your split.',
+                      'Add exercises below to build your routine.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
@@ -3242,7 +3244,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
           ),
           GradientButton(
             onPressed: _saveSplit,
-            child: const Text('Save Workout Split'),
+            child: const Text('Save Workout Routine'),
           ),
         ],
       ),
@@ -3252,7 +3254,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
   void _startNewSplit() {
     setState(() {
       _editingIndex = null;
-      _nameCtrl.text = 'New Workout Split';
+      _nameCtrl.text = 'New Workout Routine';
       _draftExercises = [];
       _customExerciseCtrl.clear();
       _customMusclesCtrl.clear();
@@ -3338,7 +3340,7 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
     if (name.isEmpty || _draftExercises.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Add a split name and at least one exercise.'),
+          content: Text('Add a routine name and at least one exercise.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -3395,12 +3397,12 @@ class _EmptySplitsState extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              'No splits yet',
+              'No routines yet',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
             Text(
-              'Create your own split with the exercises, sets, and reps you actually use.',
+              'Create your own routine with the exercises, sets, and reps you actually use.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -3408,7 +3410,7 @@ class _EmptySplitsState extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onCreate,
               icon: const Icon(Icons.add),
-              label: const Text('Create Custom Split'),
+              label: const Text('Create Custom Routine'),
             ),
           ],
         ),
@@ -3984,7 +3986,7 @@ class _CalendarPage extends StatelessWidget {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: _CalendarModeButton(
-                                    label: 'Custom Split',
+                                    label: 'Workout Routine',
                                     selected: isCustom,
                                     onTap: () {
                                       setSheetState(() {
@@ -4096,7 +4098,7 @@ class _CalendarPage extends StatelessWidget {
                               durationMinutes: duration,
                               intensity: selectedIntensity,
                               notes: isCustom
-                                  ? '${selectedSplit!.exercises.length} custom exercises'
+                                  ? '${selectedSplit!.exercises.length} routine exercises'
                                   : session.notes,
                               customName: isCustom ? selectedSplit!.name : null,
                               customSplitId:
@@ -4276,6 +4278,29 @@ class _WeeklySummaryPage extends StatelessWidget {
         .toList();
     final summaryWorkouts =
         workouts.where((session) => session.hasPostWorkoutSummary).toList();
+    final plannedThisWeek = appState
+        .sessionsBetween(
+            weekStart, weekEnd.subtract(const Duration(seconds: 1)))
+        .where((session) => !session.plannedAt.isBefore(weekStart))
+        .toList();
+    final totalSetsByMuscle = <String, int>{};
+    var estimatedGlycogenCost = 0.0;
+    for (final session in plannedThisWeek) {
+      estimatedGlycogenCost += session.estimatedMuscleGlycogenCostG;
+      final exercises = session.completedExercises.isNotEmpty
+          ? session.completedExercises
+          : session.plannedExercises;
+      for (final exercise in exercises) {
+        final muscles =
+            exercise.muscles.isEmpty ? const ['Custom'] : exercise.muscles;
+        for (final muscle in muscles) {
+          totalSetsByMuscle[muscle] =
+              (totalSetsByMuscle[muscle] ?? 0) + exercise.sets;
+        }
+      }
+    }
+    final topMuscles = totalSetsByMuscle.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final avgIntensity = summaryWorkouts.isEmpty
         ? null
         : summaryWorkouts
@@ -4294,7 +4319,9 @@ class _WeeklySummaryPage extends StatelessWidget {
     final avgCalories = totalCalories / daysElapsed;
     final avgProtein = totalProtein / daysElapsed;
     final profile = appState.profile;
-    final plannedWorkouts = profile?.workoutPreferences.gymDaysPerWeek ?? 4;
+    final plannedWorkouts = appState.weeklyWorkoutAssignments.isNotEmpty
+        ? appState.weeklyWorkoutAssignments.length
+        : profile?.workoutPreferences.gymDaysPerWeek ?? 4;
     final recommendations = _weeklyRecommendations(
       workouts: workouts,
       summaries: summaryWorkouts,
@@ -4326,7 +4353,7 @@ class _WeeklySummaryPage extends StatelessWidget {
                   _WeeklyMetricTile(
                     label: 'Workouts',
                     value: '${workouts.length}',
-                    detail: 'goal $plannedWorkouts',
+                    detail: 'planned $plannedWorkouts',
                     color: AppTheme.indigo,
                   ),
                   const SizedBox(width: 8),
@@ -4349,11 +4376,9 @@ class _WeeklySummaryPage extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   _WeeklyMetricTile(
-                    label: 'Intensity',
-                    value: avgIntensity == null
-                        ? '--'
-                        : avgIntensity.toStringAsFixed(1),
-                    detail: 'post-workout',
+                    label: 'Load',
+                    value: '${estimatedGlycogenCost.round()}g',
+                    detail: 'glycogen est.',
                     color: AppTheme.coral,
                   ),
                 ],
@@ -4362,6 +4387,32 @@ class _WeeklySummaryPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (topMuscles.isNotEmpty) ...[
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Training Load',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: topMuscles
+                      .take(8)
+                      .map(
+                        (entry) => AppPill(
+                          label: '${entry.key}: ${entry.value} sets',
+                          color: _muscleColor(entry.key),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4547,6 +4598,14 @@ class _SettingsPage extends StatelessWidget {
                 subtitle:
                     '${profile.foodPreferences.preferredFoods.length} liked, ${profile.foodPreferences.pantryFoods.length} available',
                 onTap: () => _showFoodPreferencesSheet(context, profile),
+              ),
+              SwitchListTile(
+                value: appState.themeMode == ThemeMode.dark,
+                onChanged: (enabled) => appState.setThemeMode(
+                  enabled ? ThemeMode.dark : ThemeMode.light,
+                ),
+                title: const Text('Dark Mode'),
+                subtitle: const Text('Use a darker high-contrast interface.'),
               ),
             ],
           ),
@@ -5110,7 +5169,7 @@ class _CalendarSplitPicker extends StatelessWidget {
       return AppCard(
         padding: const EdgeInsets.all(18),
         child: Text(
-          'No custom splits yet. Create one from Workouts > My Splits.',
+          'No workout routines yet. Create one from Workouts > My Routines.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),

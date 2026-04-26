@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:fuelwindow/demo/demo_accounts.dart';
 import 'package:fuelwindow/models/nutrition_estimate.dart';
 import 'package:fuelwindow/models/training_session.dart';
+import 'package:fuelwindow/models/workout_split.dart';
 import 'package:fuelwindow/repositories/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -65,8 +67,67 @@ void main() {
       expect(restored.savedFoods, isNotEmpty);
       expect(restored.sessions, isNotEmpty);
       expect(restored.workoutSplits, isNotEmpty);
+      expect(restored.themeMode, ThemeMode.system);
     } finally {
       restored.dispose();
+    }
+  });
+
+  test('Persists theme mode and weekly workout assignments', () async {
+    final state = AppState();
+    try {
+      state.loadDemoAccount(DemoAccounts.all.first);
+      final routine = state.workoutRoutines.first;
+      state.setThemeMode(ThemeMode.dark);
+      state.saveWeeklyWorkoutAssignment(
+        WeeklyWorkoutAssignment(
+          id: 'weekly-1',
+          routineId: routine.id,
+          weekday: state.now.weekday,
+          minuteOfDay: 17 * 60,
+          durationMinutes: 60,
+          intensity: SessionIntensity.moderate,
+        ),
+      );
+      await state.persistState();
+    } finally {
+      state.dispose();
+    }
+
+    final restored = AppState();
+    try {
+      await restored.loadPersistedState();
+      expect(restored.themeMode, ThemeMode.dark);
+      expect(restored.weeklyWorkoutAssignments, hasLength(1));
+      expect(restored.nextSession, isNotNull);
+    } finally {
+      restored.dispose();
+    }
+  });
+
+  test('Projects recurring routines without materializing sessions', () {
+    final state = AppState();
+    try {
+      state.loadDemoAccount(DemoAccounts.all.first);
+      final routine = state.workoutRoutines.first;
+      final concreteCount = state.concreteSessions.length;
+
+      state.saveWeeklyWorkoutAssignment(
+        WeeklyWorkoutAssignment(
+          id: 'weekly-2',
+          routineId: routine.id,
+          weekday: state.now.weekday,
+          minuteOfDay: state.now.hour * 60 + state.now.minute + 5,
+          durationMinutes: 75,
+          intensity: SessionIntensity.high,
+        ),
+      );
+
+      expect(state.concreteSessions, hasLength(concreteCount));
+      expect(state.sessions.length, greaterThan(concreteCount));
+      expect(state.nextSession?.plannedExercises, isNotEmpty);
+    } finally {
+      state.dispose();
     }
   });
 

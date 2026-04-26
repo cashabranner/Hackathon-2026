@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../demo/demo_accounts.dart';
@@ -27,9 +27,12 @@ class AppState extends ChangeNotifier {
   List<FoodLog> _foodLogs = [];
   List<SavedFood> _savedFoods = [];
   List<TrainingSession> _sessions = [];
-  List<WorkoutSplit> _workoutSplits = [];
+  List<WorkoutRoutine> _workoutRoutines = [];
+  List<WeeklyWorkoutAssignment> _weeklyWorkoutAssignments = [];
+  Set<String> _deletedProjectedSessionIds = {};
   MetabolicState? _metabolicState;
   FuelPrescription? _prescription;
+  ThemeMode _themeMode = ThemeMode.system;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
   bool _isHydrated = false;
@@ -45,10 +48,21 @@ class AppState extends ChangeNotifier {
   UserProfile? get profile => _profile;
   List<FoodLog> get foodLogs => List.unmodifiable(_foodLogs);
   List<SavedFood> get savedFoods => List.unmodifiable(_savedFoods);
-  List<TrainingSession> get sessions => List.unmodifiable(_sessions);
-  List<WorkoutSplit> get workoutSplits => List.unmodifiable(_workoutSplits);
+  List<TrainingSession> get sessions => List.unmodifiable(
+        _mergedSessionsBetween(
+          _now.subtract(const Duration(days: 14)),
+          _now.add(const Duration(days: 45)),
+        ),
+      );
+  List<TrainingSession> get concreteSessions => List.unmodifiable(_sessions);
+  List<WorkoutRoutine> get workoutRoutines =>
+      List.unmodifiable(_workoutRoutines);
+  List<WorkoutRoutine> get workoutSplits => workoutRoutines;
+  List<WeeklyWorkoutAssignment> get weeklyWorkoutAssignments =>
+      List.unmodifiable(_weeklyWorkoutAssignments);
   MetabolicState? get metabolicState => _metabolicState;
   FuelPrescription? get prescription => _prescription;
+  ThemeMode get themeMode => _themeMode;
   DateTime get now => _now;
   bool get isHydrated => _isHydrated;
   bool get pendingGreeting => _pendingGreeting;
@@ -56,7 +70,7 @@ class AppState extends ChangeNotifier {
   bool get hasProfile => _profile != null;
 
   TrainingSession? get nextSession {
-    final upcoming = _sessions.where((s) => s.plannedAt.isAfter(_now)).toList()
+    final upcoming = sessions.where((s) => s.plannedAt.isAfter(_now)).toList()
       ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
     return upcoming.isEmpty ? null : upcoming.first;
   }
@@ -86,9 +100,23 @@ class AppState extends ChangeNotifier {
       _sessions = (json['sessions'] as List? ?? const [])
           .map((item) => TrainingSession.fromJson(item as Map<String, dynamic>))
           .toList();
-      _workoutSplits = (json['workout_splits'] as List? ?? const [])
-          .map((item) => WorkoutSplit.fromJson(item as Map<String, dynamic>))
+      _workoutRoutines = (json['workout_routines'] as List? ??
+              json['workout_splits'] as List? ??
+              const [])
+          .map((item) => WorkoutRoutine.fromJson(item as Map<String, dynamic>))
           .toList();
+      _weeklyWorkoutAssignments =
+          (json['weekly_workout_assignments'] as List? ?? const [])
+              .map((item) => WeeklyWorkoutAssignment.fromJson(
+                    item as Map<String, dynamic>,
+                  ))
+              .toList();
+      _deletedProjectedSessionIds = Set<String>.from(
+        json['deleted_projected_session_ids'] as List? ?? const [],
+      );
+      _themeMode = ThemeMode.values.byName(
+        json['theme_mode'] as String? ?? ThemeMode.system.name,
+      );
       _isDemoMode = json['is_demo_mode'] as bool? ?? false;
       _pendingGreeting = _profile != null;
     }
@@ -107,9 +135,16 @@ class AppState extends ChangeNotifier {
         'food_logs': _foodLogs.map((log) => log.toJson()).toList(),
         'saved_foods': _savedFoods.map((food) => food.toJson()).toList(),
         'sessions': _sessions.map((session) => session.toJson()).toList(),
+        'workout_routines':
+            _workoutRoutines.map((routine) => routine.toJson()).toList(),
         'workout_splits':
-            _workoutSplits.map((split) => split.toJson()).toList(),
+            _workoutRoutines.map((routine) => routine.toJson()).toList(),
+        'weekly_workout_assignments': _weeklyWorkoutAssignments
+            .map((assignment) => assignment.toJson())
+            .toList(),
+        'deleted_projected_session_ids': _deletedProjectedSessionIds.toList(),
         'is_demo_mode': _isDemoMode,
+        'theme_mode': _themeMode.name,
       }),
     );
   }
@@ -154,7 +189,9 @@ class AppState extends ChangeNotifier {
     _foodLogs = demo.foodLogs;
     _savedFoods = demo.savedFoods;
     _sessions = demo.sessions;
-    _workoutSplits = demo.workoutSplits;
+    _workoutRoutines = demo.workoutSplits;
+    _weeklyWorkoutAssignments = [];
+    _deletedProjectedSessionIds = {};
     _pendingGreeting = true;
     _now = DateTime.now();
     _recompute();
@@ -168,7 +205,9 @@ class AppState extends ChangeNotifier {
     _foodLogs = [];
     _savedFoods = [];
     _sessions = [];
-    _workoutSplits = [];
+    _workoutRoutines = [];
+    _weeklyWorkoutAssignments = [];
+    _deletedProjectedSessionIds = {};
     _prescription = null;
     _metabolicState = null;
     _now = DateTime.now();
@@ -330,56 +369,132 @@ class AppState extends ChangeNotifier {
   }
 
   void updateSession(TrainingSession updated) {
-    _sessions = [
-      for (final s in _sessions)
-        if (s.id == updated.id) updated else s,
-    ];
+    final index = _sessions.indexWhere((s) => s.id == updated.id);
+    if (index == -1) {
+      _sessions = [..._sessions, updated];
+    } else {
+      _sessions = [
+        for (final s in _sessions)
+          if (s.id == updated.id) updated else s,
+      ];
+    }
+    _deletedProjectedSessionIds.remove(updated.id);
     _recompute();
     _persistState();
     notifyListeners();
   }
 
   void deleteSession(String id) {
+    if (id.startsWith('weekly-')) {
+      _deletedProjectedSessionIds = {..._deletedProjectedSessionIds, id};
+    }
     _sessions = _sessions.where((s) => s.id != id).toList();
     _recompute();
     _persistState();
     notifyListeners();
   }
 
-  // ─── Custom workout splits ───────────────────────────────────────────────
+  // ─── Custom workout routines ─────────────────────────────────────────────
 
-  void saveWorkoutSplit(WorkoutSplit split) {
-    final index = _workoutSplits.indexWhere((s) => s.id == split.id);
+  void saveWorkoutRoutine(WorkoutRoutine routine) {
+    final index = _workoutRoutines.indexWhere((s) => s.id == routine.id);
     if (index == -1) {
-      _workoutSplits = [..._workoutSplits, split];
+      _workoutRoutines = [..._workoutRoutines, routine];
     } else {
-      _workoutSplits = [
-        for (final existing in _workoutSplits)
-          if (existing.id == split.id) split else existing,
+      _workoutRoutines = [
+        for (final existing in _workoutRoutines)
+          if (existing.id == routine.id) routine else existing,
       ];
     }
+    _recompute();
     _persistState();
     notifyListeners();
   }
+
+  void saveWorkoutSplit(WorkoutRoutine split) => saveWorkoutRoutine(split);
 
   void addWorkoutPresetsFromPreferences({bool notify = true}) {
     final profile = _profile;
     if (profile == null) return;
     final presets = [
-      WorkoutPresetEngine.recommendedSplit(profile.workoutPreferences),
+      WorkoutPresetEngine.recommendedRoutine(profile.workoutPreferences),
       ...WorkoutPresetEngine.genericPresets(),
     ];
     for (final preset in presets) {
-      if (!_workoutSplits.any((split) => split.id == preset.id)) {
-        _workoutSplits = [..._workoutSplits, preset];
+      if (!_workoutRoutines.any((routine) => routine.id == preset.id)) {
+        _workoutRoutines = [..._workoutRoutines, preset];
       }
     }
     _persistState();
     if (notify) notifyListeners();
   }
 
-  void deleteWorkoutSplit(String id) {
-    _workoutSplits = _workoutSplits.where((s) => s.id != id).toList();
+  void deleteWorkoutRoutine(String id) {
+    _workoutRoutines = _workoutRoutines.where((s) => s.id != id).toList();
+    _weeklyWorkoutAssignments =
+        _weeklyWorkoutAssignments.where((a) => a.routineId != id).toList();
+    _recompute();
+    _persistState();
+    notifyListeners();
+  }
+
+  void deleteWorkoutSplit(String id) => deleteWorkoutRoutine(id);
+
+  void saveWeeklyWorkoutAssignment(WeeklyWorkoutAssignment assignment) {
+    final index =
+        _weeklyWorkoutAssignments.indexWhere((a) => a.id == assignment.id);
+    if (index == -1) {
+      _weeklyWorkoutAssignments = [..._weeklyWorkoutAssignments, assignment];
+    } else {
+      _weeklyWorkoutAssignments = [
+        for (final existing in _weeklyWorkoutAssignments)
+          if (existing.id == assignment.id) assignment else existing,
+      ];
+    }
+    _recompute();
+    _persistState();
+    notifyListeners();
+  }
+
+  void replaceWeeklyWorkoutAssignments(
+    List<WeeklyWorkoutAssignment> assignments,
+  ) {
+    _weeklyWorkoutAssignments = List.of(assignments);
+    _deletedProjectedSessionIds = {};
+    _recompute();
+    _persistState();
+    notifyListeners();
+  }
+
+  void applyRoutinePlan({
+    required List<WorkoutRoutine> routines,
+    required List<WeeklyWorkoutAssignment> assignments,
+  }) {
+    for (final routine in routines) {
+      final index = _workoutRoutines.indexWhere((r) => r.id == routine.id);
+      if (index == -1) {
+        _workoutRoutines = [..._workoutRoutines, routine];
+      } else {
+        _workoutRoutines[index] = routine;
+      }
+    }
+    _weeklyWorkoutAssignments = List.of(assignments);
+    _deletedProjectedSessionIds = {};
+    _recompute();
+    _persistState();
+    notifyListeners();
+  }
+
+  List<TrainingSession> projectedSessionsBetween(DateTime start, DateTime end) {
+    return _projectedSessionsBetween(start, end);
+  }
+
+  List<TrainingSession> sessionsBetween(DateTime start, DateTime end) {
+    return List.unmodifiable(_mergedSessionsBetween(start, end));
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    _themeMode = mode;
     _persistState();
     notifyListeners();
   }
@@ -392,7 +507,7 @@ class AppState extends ChangeNotifier {
     _metabolicState = MetabolicEngine.replayDay(
       _profile!,
       _foodLogs,
-      _sessions,
+      sessions,
       _now,
     );
 
@@ -406,6 +521,77 @@ class AppState extends ChangeNotifier {
     } else {
       _prescription = null;
     }
+  }
+
+  List<TrainingSession> _mergedSessionsBetween(DateTime start, DateTime end) {
+    final projected = _projectedSessionsBetween(start, end);
+    final concreteIds = _sessions.map((s) => s.id).toSet();
+    final all = [
+      ..._sessions.where(
+        (session) =>
+            !session.plannedAt.isBefore(start) &&
+            !session.plannedAt.isAfter(end),
+      ),
+      ...projected.where((session) => !concreteIds.contains(session.id)),
+    ]..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+    return all;
+  }
+
+  List<TrainingSession> _projectedSessionsBetween(
+      DateTime start, DateTime end) {
+    final profile = _profile;
+    if (profile == null || _weeklyWorkoutAssignments.isEmpty) return const [];
+    final sessions = <TrainingSession>[];
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day);
+    for (var day = startDay;
+        !day.isAfter(endDay);
+        day = day.add(const Duration(days: 1))) {
+      for (final assignment in _weeklyWorkoutAssignments) {
+        if (assignment.weekday != day.weekday) continue;
+        final routine = _routineById(assignment.routineId);
+        if (routine == null) continue;
+        final plannedAt = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          assignment.minuteOfDay ~/ 60,
+          assignment.minuteOfDay % 60,
+        );
+        if (plannedAt.isBefore(start) || plannedAt.isAfter(end)) continue;
+        final id = _projectedSessionId(assignment.id, plannedAt);
+        if (_deletedProjectedSessionIds.contains(id)) continue;
+        sessions.add(
+          TrainingSession(
+            id: id,
+            userId: profile.id,
+            type: SessionType.fullBody,
+            plannedAt: plannedAt,
+            durationMinutes: assignment.durationMinutes,
+            intensity: assignment.intensity,
+            customName: routine.name,
+            customSplitId: routine.id,
+            plannedExercises: List.of(routine.exercises),
+            notes: '${routine.exercises.length} routine exercises',
+          ),
+        );
+      }
+    }
+    return sessions;
+  }
+
+  WorkoutRoutine? _routineById(String id) {
+    for (final routine in _workoutRoutines) {
+      if (routine.id == id) return routine;
+    }
+    return null;
+  }
+
+  String _projectedSessionId(String assignmentId, DateTime plannedAt) {
+    final yyyy = plannedAt.year.toString().padLeft(4, '0');
+    final mm = plannedAt.month.toString().padLeft(2, '0');
+    final dd = plannedAt.day.toString().padLeft(2, '0');
+    return 'weekly-$assignmentId-$yyyy$mm$dd';
   }
 
   /// Advance simulated time (useful for live demos).

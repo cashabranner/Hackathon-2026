@@ -5,8 +5,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../demo/demo_accounts.dart';
 import '../../models/nutrition_estimate.dart';
+import '../../models/training_session.dart';
 import '../../models/user_profile.dart';
+import '../../models/workout_split.dart';
 import '../../repositories/app_state.dart';
+import '../../services/workout_preset_engine.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_ui.dart';
 
@@ -45,6 +48,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _preferredDurationMinutes = 60;
   bool _usesGlp1 = false;
   bool _nutritionSkipped = false;
+  bool _workoutSetupSkipped = false;
+  LifterExperience _experience = LifterExperience.newLifter;
+  bool _intermediateUsesPresets = true;
+  int _selectedPlanIndex = 0;
 
   final _commonAllergies = [
     'Gluten',
@@ -67,7 +74,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _next() {
-    if (_page < 8) {
+    if (_page < 10) {
       setState(() => _page++);
       _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 280),
@@ -79,6 +86,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _finish() {
+    final selectedWeekdays = _selectedWorkoutDays();
     final profile = UserProfile(
       id: const Uuid().v4(),
       name: _nameCtrl.text.trim().isEmpty ? 'Athlete' : _nameCtrl.text.trim(),
@@ -98,17 +106,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         cookingTimePreferenceMinutes: _cookingTimeMinutes,
       ),
       workoutPreferences: WorkoutPreferences(
-        gymDaysPerWeek: _gymDaysPerWeek,
+        gymDaysPerWeek: selectedWeekdays.length,
         preferredDurationMinutes: _preferredDurationMinutes,
-        preferredWeekdays: _preferredWeekdays.toList(),
+        preferredWeekdays: selectedWeekdays,
         muscleEmphases: _muscleEmphases.toList(),
         preferredExercises: _csv(_preferredExercisesCtrl.text),
       ),
+      lifterExperience: _experience,
       usesGlp1: _usesGlp1,
       createdAt: DateTime.now(),
     );
     final appState = context.read<AppState>();
     appState.saveProfile(profile);
+    _applyWorkoutPlanIfNeeded(appState, profile);
     final yesMeals = _mealVotes.entries
         .where((entry) => entry.value)
         .map((entry) => _mealSuggestions[entry.key])
@@ -129,6 +139,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _skipNutrition() {
     setState(() => _nutritionSkipped = true);
     _goToPage(7);
+  }
+
+  void _skipWorkoutSetup() {
+    setState(() => _workoutSetupSkipped = true);
+    _finish();
   }
 
   void _goToPage(int page) {
@@ -190,6 +205,59 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       .where((item) => item.isNotEmpty)
       .toList();
 
+  List<String> _selectedWorkoutDays() {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final selected = weekdays
+        .where((day) => _preferredWeekdays.contains(day))
+        .take(_gymDaysPerWeek)
+        .toList();
+    if (selected.isNotEmpty) return selected;
+    return weekdays.take(_gymDaysPerWeek.clamp(1, 7)).toList();
+  }
+
+  void _applyWorkoutPlanIfNeeded(AppState appState, UserProfile profile) {
+    if (_workoutSetupSkipped) return;
+    final shouldApplyGenerated = _experience == LifterExperience.newLifter ||
+        (_experience == LifterExperience.intermediate &&
+            _intermediateUsesPresets);
+    if (!shouldApplyGenerated) return;
+
+    final days = _selectedWorkoutDays();
+    final options = WorkoutPresetEngine.planOptionsForDays(days);
+    final option = options[_selectedPlanIndex.clamp(0, options.length - 1)];
+    final routines = option.routines
+        .map((routine) => routine.copyWith(id: '${option.id}_${routine.id}'))
+        .toList();
+    final assignments = <WeeklyWorkoutAssignment>[];
+    for (var i = 0; i < days.length; i++) {
+      final routine = routines[i % routines.length];
+      assignments.add(
+        WeeklyWorkoutAssignment(
+          id: '${option.id}_${days[i].toLowerCase()}_$i',
+          routineId: routine.id,
+          weekday: _weekdayNumber(days[i]),
+          minuteOfDay: 17 * 60,
+          durationMinutes: profile.workoutPreferences.preferredDurationMinutes,
+          intensity: _experience == LifterExperience.newLifter
+              ? SessionIntensity.moderate
+              : SessionIntensity.high,
+        ),
+      );
+    }
+    appState.applyRoutinePlan(routines: routines, assignments: assignments);
+  }
+
+  int _weekdayNumber(String day) => switch (day) {
+        'Mon' => DateTime.monday,
+        'Tue' => DateTime.tuesday,
+        'Wed' => DateTime.wednesday,
+        'Thu' => DateTime.thursday,
+        'Fri' => DateTime.friday,
+        'Sat' => DateTime.saturday,
+        'Sun' => DateTime.sunday,
+        _ => DateTime.monday,
+      };
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -200,7 +268,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               constraints: const BoxConstraints(maxWidth: 680),
               child: Column(
                 children: [
-                  _Header(page: _page, totalPages: 9),
+                  _Header(page: _page, totalPages: 11),
                   Expanded(
                     child: PageView(
                       controller: _pageCtrl,
@@ -268,7 +336,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             },
                             onSkip: _skipNutrition,
                           ),
+                        _WorkoutExperiencePage(
+                          experience: _experience,
+                          intermediateUsesPresets: _intermediateUsesPresets,
+                          onExperienceChanged: (value) =>
+                              setState(() => _experience = value),
+                          onIntermediateChoiceChanged: (value) => setState(
+                            () => _intermediateUsesPresets = value,
+                          ),
+                          onSkip: _skipWorkoutSetup,
+                          onNext: _next,
+                        ),
                         _WorkoutFrequencyPage(
+                          experience: _experience,
                           activity: _activity,
                           gymDaysPerWeek: _gymDaysPerWeek,
                           preferredDurationMinutes: _preferredDurationMinutes,
@@ -286,7 +366,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               _preferredWeekdays.add(day);
                             }
                           }),
-                          onSkip: _finish,
+                          onSkip: _skipWorkoutSetup,
+                          onNext: _next,
+                        ),
+                        _WorkoutPlanOptionsPage(
+                          experience: _experience,
+                          intermediateUsesPresets: _intermediateUsesPresets,
+                          weekdays: _selectedWorkoutDays(),
+                          selectedIndex: _selectedPlanIndex,
+                          onSelected: (index) =>
+                              setState(() => _selectedPlanIndex = index),
+                          onSkip: _skipWorkoutSetup,
                           onNext: _next,
                         ),
                         _WorkoutPriorityPage(
@@ -880,7 +970,126 @@ class _MealVotePage extends StatelessWidget {
   }
 }
 
+class _WorkoutExperiencePage extends StatelessWidget {
+  final LifterExperience experience;
+  final bool intermediateUsesPresets;
+  final ValueChanged<LifterExperience> onExperienceChanged;
+  final ValueChanged<bool> onIntermediateChoiceChanged;
+  final VoidCallback onSkip;
+  final VoidCallback onNext;
+
+  const _WorkoutExperiencePage({
+    required this.experience,
+    required this.intermediateUsesPresets,
+    required this.onExperienceChanged,
+    required this.onIntermediateChoiceChanged,
+    required this.onSkip,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Lifting Experience',
+              style: Theme.of(context).textTheme.headlineLarge),
+          const SizedBox(height: 8),
+          Text(
+            'This shapes how much structure Fuel creates for you.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 20),
+          _ExperienceTile(
+            title: 'New lifter',
+            subtitle: 'I want Fuel to suggest routines that fit my week.',
+            selected: experience == LifterExperience.newLifter,
+            onTap: () => onExperienceChanged(LifterExperience.newLifter),
+          ),
+          _ExperienceTile(
+            title: 'Intermediate',
+            subtitle: 'I know the basics, but may want a starting template.',
+            selected: experience == LifterExperience.intermediate,
+            onTap: () => onExperienceChanged(LifterExperience.intermediate),
+          ),
+          _ExperienceTile(
+            title: 'Experienced',
+            subtitle: 'I already know the routines and schedule I want.',
+            selected: experience == LifterExperience.experienced,
+            onTap: () => onExperienceChanged(LifterExperience.experienced),
+          ),
+          if (experience == LifterExperience.intermediate) ...[
+            const SizedBox(height: 12),
+            SwitchListTile(
+              value: intermediateUsesPresets,
+              onChanged: onIntermediateChoiceChanged,
+              title: const Text('Start from preset routines'),
+              subtitle: const Text('Turn off if you want to build your own.'),
+            ),
+          ],
+          const SizedBox(height: 20),
+          GradientButton(onPressed: onNext, child: const Text('Continue')),
+          TextButton(
+              onPressed: onSkip, child: const Text('Skip workout setup')),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExperienceTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ExperienceTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AppCard(
+          color: selected ? const Color(0xFFECFDF5) : null,
+          borderColor: selected ? AppTheme.emerald : null,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+              ),
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: selected ? AppTheme.teal : AppTheme.gray500,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WorkoutFrequencyPage extends StatelessWidget {
+  final LifterExperience experience;
   final ActivityBaseline activity;
   final int gymDaysPerWeek;
   final int preferredDurationMinutes;
@@ -893,6 +1102,7 @@ class _WorkoutFrequencyPage extends StatelessWidget {
   final VoidCallback onNext;
 
   const _WorkoutFrequencyPage({
+    required this.experience,
     required this.activity,
     required this.gymDaysPerWeek,
     required this.preferredDurationMinutes,
@@ -912,7 +1122,10 @@ class _WorkoutFrequencyPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Workout Schedule',
+          Text(
+              experience == LifterExperience.experienced
+                  ? 'Routine Schedule'
+                  : 'Workout Schedule',
               style: Theme.of(context).textTheme.headlineLarge),
           const SizedBox(height: 20),
           ..._PreferencesPage._activityLabels.entries.map(
@@ -952,11 +1165,146 @@ class _WorkoutFrequencyPage extends StatelessWidget {
                 .toList(),
           ),
           const SizedBox(height: 24),
-          GradientButton(
-              onPressed: onNext, child: const Text('Create Workout Plan')),
+          GradientButton(onPressed: onNext, child: const Text('Continue')),
           TextButton(
               onPressed: onSkip, child: const Text('Skip workout creation')),
         ],
+      ),
+    );
+  }
+}
+
+class _WorkoutPlanOptionsPage extends StatelessWidget {
+  final LifterExperience experience;
+  final bool intermediateUsesPresets;
+  final List<String> weekdays;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final VoidCallback onSkip;
+  final VoidCallback onNext;
+
+  const _WorkoutPlanOptionsPage({
+    required this.experience,
+    required this.intermediateUsesPresets,
+    required this.weekdays,
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.onSkip,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final usesGenerated = experience == LifterExperience.newLifter ||
+        (experience == LifterExperience.intermediate &&
+            intermediateUsesPresets);
+    final options = WorkoutPresetEngine.planOptionsForDays(weekdays);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            usesGenerated ? 'Choose a Routine Plan' : 'Build Your Routines',
+            style: Theme.of(context).textTheme.headlineLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            usesGenerated
+                ? 'Fuel will place the selected routines onto your weekly calendar.'
+                : 'Fuel will save your preferences now. Create exact workout routines from Workouts > My Routines after onboarding.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 20),
+          if (usesGenerated)
+            ...options.asMap().entries.map(
+                  (entry) => _PlanOptionCard(
+                    option: entry.value,
+                    selected: selectedIndex == entry.key,
+                    onTap: () => onSelected(entry.key),
+                  ),
+                )
+          else
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Custom routine path',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Use the next screen to list preferred exercises and muscle priorities. You can create exact routines, set counts, rep ranges, and weekly assignments in the Workouts tab.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 20),
+          GradientButton(
+            onPressed: onNext,
+            child: Text(usesGenerated ? 'Use This Plan' : 'Continue'),
+          ),
+          TextButton(
+              onPressed: onSkip, child: const Text('Skip workout setup')),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanOptionCard extends StatelessWidget {
+  final RoutinePlanOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PlanOptionCard({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AppCard(
+          color: selected ? const Color(0xFFECFDF5) : null,
+          borderColor: selected ? AppTheme.emerald : null,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(option.name,
+                        style: Theme.of(context).textTheme.titleLarge),
+                  ),
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: selected ? AppTheme.teal : AppTheme.gray500,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(option.description,
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 10),
+              ...option.schedule.map(
+                (line) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child:
+                      Text(line, style: Theme.of(context).textTheme.bodyMedium),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1008,7 +1356,7 @@ class _WorkoutPriorityPage extends StatelessWidget {
           const SizedBox(height: 24),
           AppCard(
             child: Text(
-              'Fuel will save a recommended split with exercise order, sets, and rep ranges based on these choices.',
+              'Fuel will save recommended workout routines with exercise order, sets, and rep ranges based on these choices.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),

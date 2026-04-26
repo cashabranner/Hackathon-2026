@@ -20,6 +20,10 @@ class AppTheme {
   static const surfaceCard = Colors.white;
   static const indigoBorder = Color(0xFFE0E7FF);
   static const inputFill = Color(0xFFF9FAFB);
+  static const darkSurface = Color(0xFF0F172A);
+  static const darkSurfaceCard = Color(0xFF111827);
+  static const darkInputFill = Color(0xFF1F2937);
+  static const darkBorder = Color(0xFF334155);
 
   static const pageGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -28,6 +32,16 @@ class AppTheme {
       Color(0xFFEFF6FF),
       Color(0xFFEEF2FF),
       Color(0xFFFAF5FF),
+    ],
+  );
+
+  static const darkPageGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF020617),
+      Color(0xFF0F172A),
+      Color(0xFF111827),
     ],
   );
 
@@ -142,5 +156,99 @@ class AppTheme {
     );
   }
 
-  static ThemeData get dark => light;
+  static ThemeData get dark {
+    final base = ThemeData.dark(useMaterial3: true);
+    return base.copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _seed,
+        brightness: Brightness.dark,
+        surface: darkSurface,
+        onSurface: Colors.white,
+      ),
+      scaffoldBackgroundColor: darkSurface,
+      cardTheme: CardThemeData(
+        color: darkSurfaceCard,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: darkBorder),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: darkInputFill,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: darkBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: darkBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: emerald, width: 1.5),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      sliderTheme: const SliderThemeData(
+        activeTrackColor: teal,
+        inactiveTrackColor: darkBorder,
+        thumbColor: teal,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: teal,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: teal,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+      ),
+      textTheme: base.textTheme.copyWith(
+        headlineLarge: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 30,
+            height: 1.2),
+        headlineMedium: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 24,
+            height: 1.25),
+        titleLarge: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20),
+        titleMedium: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+        bodyLarge: const TextStyle(
+            color: Color(0xFFCBD5E1), fontSize: 15, height: 1.45),
+        bodyMedium: const TextStyle(
+            color: Color(0xFFCBD5E1), fontSize: 14, height: 1.4),
+        labelLarge: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+      ),
+    );
+  }
 }

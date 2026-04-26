@@ -1,9 +1,11 @@
-class WorkoutSplit {
+import 'training_session.dart';
+
+class WorkoutRoutine {
   final String id;
   final String name;
   final List<SplitExercise> exercises;
 
-  const WorkoutSplit({
+  const WorkoutRoutine({
     required this.id,
     required this.name,
     required this.exercises,
@@ -13,12 +15,12 @@ class WorkoutSplit {
     return exercises.expand((exercise) => exercise.muscles).toSet().toList();
   }
 
-  WorkoutSplit copyWith({
+  WorkoutRoutine copyWith({
     String? id,
     String? name,
     List<SplitExercise>? exercises,
   }) {
-    return WorkoutSplit(
+    return WorkoutRoutine(
       id: id ?? this.id,
       name: name ?? this.name,
       exercises: exercises ?? this.exercises,
@@ -31,13 +33,73 @@ class WorkoutSplit {
         'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
       };
 
-  factory WorkoutSplit.fromJson(Map<String, dynamic> json) => WorkoutSplit(
+  factory WorkoutRoutine.fromJson(Map<String, dynamic> json) => WorkoutRoutine(
         id: json['id'] as String,
         name: json['name'] as String,
         exercises: (json['exercises'] as List? ?? const [])
             .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
             .toList(),
       );
+}
+
+typedef WorkoutSplit = WorkoutRoutine;
+
+class WeeklyWorkoutAssignment {
+  final String id;
+  final String routineId;
+  final int weekday;
+  final int minuteOfDay;
+  final int durationMinutes;
+  final SessionIntensity intensity;
+
+  const WeeklyWorkoutAssignment({
+    required this.id,
+    required this.routineId,
+    required this.weekday,
+    required this.minuteOfDay,
+    required this.durationMinutes,
+    required this.intensity,
+  });
+
+  WeeklyWorkoutAssignment copyWith({
+    String? id,
+    String? routineId,
+    int? weekday,
+    int? minuteOfDay,
+    int? durationMinutes,
+    SessionIntensity? intensity,
+  }) {
+    return WeeklyWorkoutAssignment(
+      id: id ?? this.id,
+      routineId: routineId ?? this.routineId,
+      weekday: weekday ?? this.weekday,
+      minuteOfDay: minuteOfDay ?? this.minuteOfDay,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+      intensity: intensity ?? this.intensity,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'routine_id': routineId,
+        'weekday': weekday,
+        'minute_of_day': minuteOfDay,
+        'duration_minutes': durationMinutes,
+        'intensity': intensity.name,
+      };
+
+  factory WeeklyWorkoutAssignment.fromJson(Map<String, dynamic> json) {
+    return WeeklyWorkoutAssignment(
+      id: json['id'] as String,
+      routineId: json['routine_id'] as String,
+      weekday: (json['weekday'] as num).toInt(),
+      minuteOfDay: (json['minute_of_day'] as num?)?.toInt() ?? 17 * 60,
+      durationMinutes: (json['duration_minutes'] as num?)?.toInt() ?? 60,
+      intensity: SessionIntensity.values.byName(
+        json['intensity'] as String? ?? SessionIntensity.moderate.name,
+      ),
+    );
+  }
 }
 
 class SplitExercise {

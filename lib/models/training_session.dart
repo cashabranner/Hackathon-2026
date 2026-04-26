@@ -52,8 +52,30 @@ class TrainingSession {
         SessionIntensity.maximal => 1.5,
       };
 
-  double get estimatedMuscleGlycogenCostG =>
-      depletionRateGPerMin * durationMinutes;
+  double get estimatedMuscleGlycogenCostG {
+    final exercises =
+        completedExercises.isNotEmpty ? completedExercises : plannedExercises;
+    if (exercises.isEmpty) {
+      return depletionRateGPerMin * durationMinutes;
+    }
+
+    final intensityMultiplier = switch (intensity) {
+      SessionIntensity.low => 0.7,
+      SessionIntensity.moderate => 1.0,
+      SessionIntensity.high => 1.25,
+      SessionIntensity.maximal => 1.45,
+    };
+    final exerciseCost = exercises.fold<double>(
+      0,
+      (sum, exercise) => sum + _exerciseGlycogenCost(exercise),
+    );
+    final durationCap = (durationMinutes * depletionRateGPerMin * 1.8)
+        .clamp(25.0, 320.0)
+        .toDouble();
+    return (exerciseCost * intensityMultiplier).clamp(10.0, durationCap);
+  }
+
+  String? get customRoutineId => customSplitId;
 
   bool get hasPostWorkoutSummary =>
       postWorkoutFeeling?.trim().isNotEmpty == true &&
@@ -75,6 +97,40 @@ class TrainingSession {
         SessionType.steadyStateCardio => 'Cardio',
         SessionType.mobility => 'Mobility',
       };
+
+  static double _exerciseGlycogenCost(SplitExercise exercise) {
+    final reps = _averageReps(exercise.reps);
+    final muscles = exercise.muscles.map((m) => m.toLowerCase()).toList();
+    final lowerName = exercise.name.toLowerCase();
+    final isLower = muscles.any((m) =>
+            m.contains('quad') ||
+            m.contains('glute') ||
+            m.contains('hamstring')) ||
+        lowerName.contains('squat') ||
+        lowerName.contains('deadlift') ||
+        lowerName.contains('lunge');
+    final isLargeUpper = muscles.any((m) =>
+            m.contains('back') || m.contains('chest') || m.contains('delt')) ||
+        lowerName.contains('press') ||
+        lowerName.contains('row') ||
+        lowerName.contains('pull');
+    final basePerSet = isLower
+        ? 7.0
+        : isLargeUpper
+            ? 5.0
+            : 3.0;
+    final repMultiplier = (reps / 10).clamp(0.65, 1.45);
+    return exercise.sets.clamp(1, 12) * basePerSet * repMultiplier;
+  }
+
+  static double _averageReps(String reps) {
+    final matches = RegExp(r'\d+').allMatches(reps).toList();
+    if (matches.isEmpty) return 10;
+    final values = matches
+        .map((match) => double.tryParse(match.group(0) ?? '') ?? 10)
+        .toList();
+    return values.reduce((a, b) => a + b) / values.length;
+  }
 
   TrainingSession copyWith({
     String? id,

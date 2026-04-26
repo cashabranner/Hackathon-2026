@@ -25,6 +25,7 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
   DateTime _date = DateTime.now();
   bool _customSplitMode = false;
   WorkoutSplit? _selectedSplit;
+  bool _repeatWeekly = false;
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(context: context, initialTime: _time);
@@ -47,7 +48,7 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
     if (_customSplitMode && selectedSplit == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select or create a custom split first.'),
+          content: Text('Select or create a workout routine first.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -61,6 +62,31 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
       _time.hour,
       _time.minute,
     );
+    if (_customSplitMode && _repeatWeekly) {
+      context.read<AppState>().saveWeeklyWorkoutAssignment(
+            WeeklyWorkoutAssignment(
+              id: const Uuid().v4(),
+              routineId: selectedSplit!.id,
+              weekday: plannedAt.weekday,
+              minuteOfDay: _time.hour * 60 + _time.minute,
+              durationMinutes: _durationMin,
+              intensity: _intensity,
+            ),
+          );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${selectedSplit.name} added to your weekly calendar.'),
+          backgroundColor: AppTheme.teal,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/dashboard');
+      }
+      return;
+    }
     final session = TrainingSession(
       id: const Uuid().v4(),
       userId: context.read<AppState>().profile?.id ?? 'local',
@@ -73,7 +99,7 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
       plannedExercises:
           _customSplitMode ? List.of(selectedSplit!.exercises) : const [],
       notes: _customSplitMode
-          ? '${selectedSplit!.exercises.length} custom exercises'
+          ? '${selectedSplit!.exercises.length} routine exercises'
           : null,
     );
     context.read<AppState>().addSession(session);
@@ -137,7 +163,7 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: _ModeButton(
-                                label: 'Custom Split',
+                                label: 'Workout Routine',
                                 selected: _customSplitMode,
                                 onTap: () => setState(() {
                                   _customSplitMode = true;
@@ -214,6 +240,19 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
                           durationMin: _durationMin,
                           split: _customSplitMode ? _selectedSplit : null,
                         ),
+                        if (_customSplitMode) ...[
+                          const SizedBox(height: 8),
+                          CheckboxListTile(
+                            value: _repeatWeekly,
+                            onChanged: (value) => setState(
+                              () => _repeatWeekly = value ?? false,
+                            ),
+                            title: const Text('Repeat weekly'),
+                            subtitle: const Text(
+                              'Adds this routine to the weekly calendar.',
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 24),
                         GradientButton(
                           onPressed: _save,
@@ -473,12 +512,12 @@ class _CustomSplitPicker extends StatelessWidget {
             const Icon(Icons.fitness_center, color: AppTheme.indigo, size: 36),
             const SizedBox(height: 12),
             Text(
-              'No custom splits yet',
+              'No workout routines yet',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
-              'Create one from Workouts > My Splits, then return here to schedule it.',
+              'Create one from Workouts > My Routines, then return here to schedule it.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -490,7 +529,7 @@ class _CustomSplitPicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionLabel('Select Your Split'),
+        const _SectionLabel('Select Your Routine'),
         const SizedBox(height: 12),
         ...splits.map((split) {
           final active = selected?.id == split.id;

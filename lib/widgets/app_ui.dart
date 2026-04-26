@@ -9,8 +9,11 @@ class GradientShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return DecoratedBox(
-      decoration: const BoxDecoration(gradient: AppTheme.pageGradient),
+      decoration: BoxDecoration(
+        gradient: isDark ? AppTheme.darkPageGradient : AppTheme.pageGradient,
+      ),
       child: child,
     );
   }
@@ -20,30 +23,35 @@ class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry? margin;
-  final Color borderColor;
+  final Color? borderColor;
   final Gradient? gradient;
-  final Color color;
+  final Color? color;
 
   const AppCard({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(20),
     this.margin,
-    this.borderColor = AppTheme.indigoBorder,
+    this.borderColor,
     this.gradient,
-    this.color = Colors.white,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final resolvedColor =
+        color ?? (isDark ? AppTheme.darkSurfaceCard : Colors.white);
+    final resolvedBorder =
+        borderColor ?? (isDark ? AppTheme.darkBorder : AppTheme.indigoBorder);
     return Container(
       margin: margin,
       padding: padding,
       decoration: BoxDecoration(
-        color: gradient == null ? color : null,
+        color: gradient == null ? resolvedColor : null,
         gradient: gradient,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
+        border: Border.all(color: resolvedBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(8),
@@ -97,13 +105,17 @@ class GradientButton extends StatelessWidget {
           child: Padding(
             padding: padding,
             child: Center(
-              child: DefaultTextStyle.merge(
-                style: TextStyle(
-                  color: enabled ? Colors.white : AppTheme.gray500,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+              child: Semantics(
+                button: true,
+                enabled: enabled,
+                child: DefaultTextStyle.merge(
+                  style: TextStyle(
+                    color: enabled ? Colors.white : AppTheme.gray500,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  child: child,
                 ),
-                child: child,
               ),
             ),
           ),
@@ -151,7 +163,6 @@ class BrandHeader extends StatelessWidget {
               const Text(
                 'Fuel',
                 style: TextStyle(
-                  color: Color(0xFF312E81),
                   fontSize: 24,
                   fontWeight: FontWeight.w600,
                 ),
@@ -160,7 +171,6 @@ class BrandHeader extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: const TextStyle(
-                    color: AppTheme.indigo,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
