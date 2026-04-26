@@ -21,12 +21,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _page = 0;
 
   final _nameCtrl = TextEditingController();
+  final _preferredFoodsCtrl = TextEditingController(text: 'Rice, eggs, banana');
+  final _pantryFoodsCtrl = TextEditingController(text: 'Oats, rice, chicken');
+  final _avoidedFoodsCtrl = TextEditingController();
+  final _preferredExercisesCtrl = TextEditingController(
+    text: 'Squat, bench press, row',
+  );
   int _age = 25;
   BiologicalSex _sex = BiologicalSex.male;
   double _heightCm = 175;
   double _weightKg = 75;
   ActivityBaseline _activity = ActivityBaseline.moderatelyActive;
   final Set<String> _allergies = {};
+  final Set<String> _preferredWeekdays = {'Mon', 'Wed', 'Fri'};
+  final Set<String> _muscleEmphases = {'Legs', 'Back'};
+  String _dietStyle = 'Balanced';
+  int _cookingTimeMinutes = 20;
+  int _gymDaysPerWeek = 4;
+  int _preferredDurationMinutes = 60;
   bool _usesGlp1 = false;
 
   final _commonAllergies = [
@@ -42,6 +54,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void dispose() {
     _pageCtrl.dispose();
     _nameCtrl.dispose();
+    _preferredFoodsCtrl.dispose();
+    _pantryFoodsCtrl.dispose();
+    _avoidedFoodsCtrl.dispose();
+    _preferredExercisesCtrl.dispose();
     super.dispose();
   }
 
@@ -67,12 +83,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       weightKg: _weightKg,
       activityBaseline: _activity,
       allergies: _allergies.toList(),
+      foodPreferences: FoodPreferences(
+        preferredFoods: _csv(_preferredFoodsCtrl.text),
+        pantryFoods: _csv(_pantryFoodsCtrl.text),
+        avoidedFoods: _csv(_avoidedFoodsCtrl.text),
+        dietStyle: _dietStyle,
+        cookingTimePreferenceMinutes: _cookingTimeMinutes,
+      ),
+      workoutPreferences: WorkoutPreferences(
+        gymDaysPerWeek: _gymDaysPerWeek,
+        preferredDurationMinutes: _preferredDurationMinutes,
+        preferredWeekdays: _preferredWeekdays.toList(),
+        muscleEmphases: _muscleEmphases.toList(),
+        preferredExercises: _csv(_preferredExercisesCtrl.text),
+      ),
       usesGlp1: _usesGlp1,
       createdAt: DateTime.now(),
     );
     context.read<AppState>().saveProfile(profile);
     context.go('/dashboard');
   }
+
+  List<String> _csv(String value) => value
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +149,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           activity: _activity,
                           allergies: _allergies,
                           commonAllergies: _commonAllergies,
+                          preferredFoodsCtrl: _preferredFoodsCtrl,
+                          pantryFoodsCtrl: _pantryFoodsCtrl,
+                          avoidedFoodsCtrl: _avoidedFoodsCtrl,
+                          preferredExercisesCtrl: _preferredExercisesCtrl,
+                          dietStyle: _dietStyle,
+                          cookingTimeMinutes: _cookingTimeMinutes,
+                          gymDaysPerWeek: _gymDaysPerWeek,
+                          preferredDurationMinutes: _preferredDurationMinutes,
+                          preferredWeekdays: _preferredWeekdays,
+                          muscleEmphases: _muscleEmphases,
                           usesGlp1: _usesGlp1,
                           onActivityChanged: (v) =>
                               setState(() => _activity = v),
@@ -121,6 +167,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               _allergies.remove(a);
                             } else {
                               _allergies.add(a);
+                            }
+                          }),
+                          onDietStyleChanged: (value) =>
+                              setState(() => _dietStyle = value),
+                          onCookingTimeChanged: (value) =>
+                              setState(() => _cookingTimeMinutes = value),
+                          onGymDaysChanged: (value) =>
+                              setState(() => _gymDaysPerWeek = value),
+                          onDurationChanged: (value) =>
+                              setState(() => _preferredDurationMinutes = value),
+                          onWeekdayToggled: (day) => setState(() {
+                            if (_preferredWeekdays.contains(day)) {
+                              _preferredWeekdays.remove(day);
+                            } else {
+                              _preferredWeekdays.add(day);
+                            }
+                          }),
+                          onMuscleToggled: (muscle) => setState(() {
+                            if (_muscleEmphases.contains(muscle)) {
+                              _muscleEmphases.remove(muscle);
+                            } else {
+                              _muscleEmphases.add(muscle);
                             }
                           }),
                           onGlp1Changed: (v) => setState(() => _usesGlp1 = v),
@@ -179,10 +247,7 @@ class _DemoPickerPage extends StatelessWidget {
   final void Function(DemoAccount) onDemoPicked;
   final VoidCallback onContinue;
 
-  const _DemoPickerPage({
-    required this.onDemoPicked,
-    required this.onContinue,
-  });
+  const _DemoPickerPage({required this.onDemoPicked, required this.onContinue});
 
   @override
   Widget build(BuildContext context) {
@@ -252,11 +317,15 @@ class _DemoCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(demo.label,
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        demo.label,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 4),
-                      Text(demo.description,
-                          style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        demo.description,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ],
                   ),
                 ),
@@ -302,8 +371,10 @@ class _BiometricsPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Your Biometrics',
-              style: Theme.of(context).textTheme.headlineLarge),
+          Text(
+            'Your Biometrics',
+            style: Theme.of(context).textTheme.headlineLarge,
+          ),
           const SizedBox(height: 8),
           Text(
             'Used to estimate your glycogen capacity and energy needs.',
@@ -383,9 +454,25 @@ class _PreferencesPage extends StatelessWidget {
   final ActivityBaseline activity;
   final Set<String> allergies;
   final List<String> commonAllergies;
+  final TextEditingController preferredFoodsCtrl;
+  final TextEditingController pantryFoodsCtrl;
+  final TextEditingController avoidedFoodsCtrl;
+  final TextEditingController preferredExercisesCtrl;
+  final String dietStyle;
+  final int cookingTimeMinutes;
+  final int gymDaysPerWeek;
+  final int preferredDurationMinutes;
+  final Set<String> preferredWeekdays;
+  final Set<String> muscleEmphases;
   final bool usesGlp1;
   final void Function(ActivityBaseline) onActivityChanged;
   final void Function(String) onAllergyToggled;
+  final void Function(String) onDietStyleChanged;
+  final void Function(int) onCookingTimeChanged;
+  final void Function(int) onGymDaysChanged;
+  final void Function(int) onDurationChanged;
+  final void Function(String) onWeekdayToggled;
+  final void Function(String) onMuscleToggled;
   final void Function(bool) onGlp1Changed;
   final VoidCallback onFinish;
 
@@ -393,9 +480,25 @@ class _PreferencesPage extends StatelessWidget {
     required this.activity,
     required this.allergies,
     required this.commonAllergies,
+    required this.preferredFoodsCtrl,
+    required this.pantryFoodsCtrl,
+    required this.avoidedFoodsCtrl,
+    required this.preferredExercisesCtrl,
+    required this.dietStyle,
+    required this.cookingTimeMinutes,
+    required this.gymDaysPerWeek,
+    required this.preferredDurationMinutes,
+    required this.preferredWeekdays,
+    required this.muscleEmphases,
     required this.usesGlp1,
     required this.onActivityChanged,
     required this.onAllergyToggled,
+    required this.onDietStyleChanged,
+    required this.onCookingTimeChanged,
+    required this.onGymDaysChanged,
+    required this.onDurationChanged,
+    required this.onWeekdayToggled,
+    required this.onMuscleToggled,
     required this.onGlp1Changed,
     required this.onFinish,
   });
@@ -415,11 +518,15 @@ class _PreferencesPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Activity & Preferences',
-              style: Theme.of(context).textTheme.headlineLarge),
+          Text(
+            'Activity & Preferences',
+            style: Theme.of(context).textTheme.headlineLarge,
+          ),
           const SizedBox(height: 28),
-          Text('Activity baseline',
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Activity baseline',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 14),
           ..._activityLabels.entries.map(
             (entry) => _ActivityTile(
@@ -429,8 +536,10 @@ class _PreferencesPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          Text('Allergies / restrictions',
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Allergies / restrictions',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -461,6 +570,102 @@ class _PreferencesPage extends StatelessWidget {
                 .toList(),
           ),
           const SizedBox(height: 24),
+          Text(
+            'Food preferences',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 12),
+          _PreferenceTextField(
+            controller: preferredFoodsCtrl,
+            label: 'Preferred foods',
+            hint: 'Rice, eggs, banana',
+          ),
+          _PreferenceTextField(
+            controller: pantryFoodsCtrl,
+            label: 'Pantry / available foods',
+            hint: 'Oats, rice, chicken',
+          ),
+          _PreferenceTextField(
+            controller: avoidedFoodsCtrl,
+            label: 'Avoided foods',
+            hint: 'Foods you dislike or avoid',
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: dietStyle,
+            decoration: const InputDecoration(labelText: 'Current diet style'),
+            items: const ['Balanced', 'High-carb', 'High-protein', 'Vegetarian']
+                .map(
+                  (style) => DropdownMenuItem(value: style, child: Text(style)),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onDietStyleChanged(value);
+            },
+          ),
+          _SliderField(
+            label: 'Cooking time: $cookingTimeMinutes min/meal',
+            value: cookingTimeMinutes.toDouble(),
+            min: 0,
+            max: 45,
+            divisions: 9,
+            onChanged: (value) => onCookingTimeChanged(value.round()),
+          ),
+          const SizedBox(height: 24),
+          Text('Workout setup', style: Theme.of(context).textTheme.titleLarge),
+          _SliderField(
+            label: 'Gym days/week: $gymDaysPerWeek',
+            value: gymDaysPerWeek.toDouble(),
+            min: 3,
+            max: 6,
+            divisions: 3,
+            onChanged: (value) => onGymDaysChanged(value.round()),
+          ),
+          _SliderField(
+            label: 'Preferred duration: $preferredDurationMinutes min',
+            value: preferredDurationMinutes.toDouble(),
+            min: 30,
+            max: 90,
+            divisions: 4,
+            onChanged: (value) => onDurationChanged(value.round()),
+          ),
+          const SizedBox(height: 8),
+          _SectionLabel('Training days'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                .map(
+                  (day) => FilterChip(
+                    label: Text(day),
+                    selected: preferredWeekdays.contains(day),
+                    onSelected: (_) => onWeekdayToggled(day),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 16),
+          _SectionLabel('Muscle emphases'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: ['Legs', 'Chest', 'Back', 'Shoulders', 'Arms', 'Core']
+                .map(
+                  (muscle) => FilterChip(
+                    label: Text(muscle),
+                    selected: muscleEmphases.contains(muscle),
+                    onSelected: (_) => onMuscleToggled(muscle),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          _PreferenceTextField(
+            controller: preferredExercisesCtrl,
+            label: 'Preferred exercises',
+            hint: 'Squat, bench press, row',
+          ),
+          const SizedBox(height: 24),
           AppCard(
             padding: const EdgeInsets.all(18),
             child: Row(
@@ -469,8 +674,10 @@ class _PreferencesPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('I use a GLP-1 medication',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'I use a GLP-1 medication',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         'e.g. semaglutide, tirzepatide - affects gastric emptying',
@@ -566,6 +773,29 @@ class _ActivityTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PreferenceTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+
+  const _PreferenceTextField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(labelText: label, hintText: hint),
       ),
     );
   }

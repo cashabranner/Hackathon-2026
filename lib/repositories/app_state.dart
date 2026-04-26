@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../config/app_config.dart';
 import '../demo/demo_accounts.dart';
+import '../models/food_catalog.dart';
 import '../models/food_log.dart';
 import '../models/metabolic_state.dart';
 import '../models/nutrition_estimate.dart';
@@ -11,6 +11,7 @@ import '../models/workout_split.dart';
 import '../services/food_parser.dart';
 import '../services/metabolic_engine.dart';
 import '../services/prescription_engine.dart';
+import '../services/workout_preset_engine.dart';
 import '../models/fuel_prescription.dart';
 
 /// Central app state managed as a ChangeNotifier.
@@ -18,6 +19,7 @@ import '../models/fuel_prescription.dart';
 class AppState extends ChangeNotifier {
   UserProfile? _profile;
   List<FoodLog> _foodLogs = [];
+  List<SavedFood> _savedFoods = [];
   List<TrainingSession> _sessions = [];
   List<WorkoutSplit> _workoutSplits = [];
   MetabolicState? _metabolicState;
@@ -29,6 +31,7 @@ class AppState extends ChangeNotifier {
 
   UserProfile? get profile => _profile;
   List<FoodLog> get foodLogs => List.unmodifiable(_foodLogs);
+  List<SavedFood> get savedFoods => List.unmodifiable(_savedFoods);
   List<TrainingSession> get sessions => List.unmodifiable(_sessions);
   List<WorkoutSplit> get workoutSplits => List.unmodifiable(_workoutSplits);
   MetabolicState? get metabolicState => _metabolicState;
@@ -47,6 +50,7 @@ class AppState extends ChangeNotifier {
 
   void saveProfile(UserProfile profile) {
     _profile = profile;
+    addWorkoutPresetsFromPreferences(notify: false);
     _recompute();
     notifyListeners();
   }
@@ -57,6 +61,7 @@ class AppState extends ChangeNotifier {
     _isDemoMode = true;
     _profile = demo.profile;
     _foodLogs = demo.foodLogs;
+    _savedFoods = [];
     _sessions = [demo.session];
     _now = demo.now;
     _recompute();
@@ -67,6 +72,7 @@ class AppState extends ChangeNotifier {
     _isDemoMode = false;
     _profile = null;
     _foodLogs = [];
+    _savedFoods = [];
     _sessions = [];
     _workoutSplits = [];
     _prescription = null;
@@ -90,21 +96,6 @@ class AppState extends ChangeNotifier {
     if (nutrition != null) {
       resolvedNutrition = nutrition;
       resolvedSource = source ?? 'local_fallback';
-    } else if (AppConfig.hasRemoteFoodParser) {
-      try {
-        resolvedNutrition = await FoodParser.parseTextRemote(
-          rawInput,
-          AppConfig.foodParserUrl,
-          AppConfig.supabaseAnonKey,
-        );
-        resolvedSource = 'edge_function';
-      } catch (_) {
-        resolvedNutrition = FoodParser.parseText(
-          rawInput,
-          allergies: _profile!.allergies,
-        );
-        resolvedSource = 'local_fallback';
-      }
     } else {
       resolvedNutrition = FoodParser.parseText(
         rawInput,
@@ -122,8 +113,40 @@ class AppState extends ChangeNotifier {
       source: resolvedSource,
     );
     _foodLogs = [..._foodLogs, log];
+    saveFoodFromNutrition(resolvedNutrition);
     _recompute();
     notifyListeners();
+  }
+
+  Future<void> logSavedFood(SavedFood food) {
+    return logFood(food.name, nutrition: food.nutrition, source: 'saved_food');
+  }
+
+  void saveFoodFromNutrition(NutritionEstimate nutrition) {
+    if (nutrition.foodName.trim().isEmpty ||
+        nutrition.carbsG + nutrition.proteinG + nutrition.fatG <= 0) {
+      return;
+    }
+    final existing = _savedFoods.indexWhere(
+      (food) => food.name.toLowerCase() == nutrition.foodName.toLowerCase(),
+    );
+    final saved = SavedFood(
+      id: existing == -1
+          ? 'saved-${DateTime.now().millisecondsSinceEpoch}'
+          : _savedFoods[existing].id,
+      name: nutrition.foodName,
+      servingLabel: 'serving',
+      nutrition: nutrition,
+    );
+    if (existing == -1) {
+      _savedFoods = [saved, ..._savedFoods].take(8).toList();
+    } else {
+      _savedFoods = [
+        saved,
+        for (var i = 0; i < _savedFoods.length; i++)
+          if (i != existing) _savedFoods[i],
+      ];
+    }
   }
 
   void updateFoodLog(FoodLog updated) {
@@ -179,6 +202,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void addWorkoutPresetsFromPreferences({bool notify = true}) {
+    final profile = _profile;
+    if (profile == null) return;
+    final presets = [
+      WorkoutPresetEngine.recommendedSplit(profile.workoutPreferences),
+      ...WorkoutPresetEngine.genericPresets(),
+    ];
+    for (final preset in presets) {
+      if (!_workoutSplits.any((split) => split.id == preset.id)) {
+        _workoutSplits = [..._workoutSplits, preset];
+      }
+    }
+    if (notify) notifyListeners();
+  }
+
   void deleteWorkoutSplit(String id) {
     _workoutSplits = _workoutSplits.where((s) => s.id != id).toList();
     notifyListeners();
@@ -198,7 +236,11 @@ class AppState extends ChangeNotifier {
 
     final upcoming = nextSession;
     if (upcoming != null && _metabolicState != null) {
-      _prescription = PrescriptionEngine.planFuel(_metabolicState!, upcoming);
+      _prescription = PrescriptionEngine.planFuel(
+        _metabolicState!,
+        upcoming,
+        profile: _profile,
+      );
     } else {
       _prescription = null;
     }

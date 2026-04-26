@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/food_catalog.dart';
 import '../models/nutrition_estimate.dart';
 
 /// Parses free-text food descriptions into NutritionEstimate.
@@ -11,8 +12,15 @@ class FoodParser {
   static const int maxNutritionLabelImageBytes = 8 * 1024 * 1024;
 
   /// Parse free-text food description; returns best-effort local estimate.
-  static NutritionEstimate parseText(String input,
-      {List<String> allergies = const []}) {
+  static NutritionEstimate parseText(
+    String input, {
+    List<String> allergies = const [],
+  }) {
+    final parsed = parseTextItems(input, allergies: allergies);
+    if (parsed.isNotEmpty) {
+      return aggregateParsedFoodItems(parsed, foodName: input);
+    }
+
     final lower = input.toLowerCase();
     NutritionEstimate? best;
     double bestScore = -1;
@@ -41,6 +49,85 @@ class FoodParser {
     }
 
     return best!;
+  }
+
+  static List<ParsedFoodItem> parseTextItems(
+    String input, {
+    List<String> allergies = const [],
+  }) {
+    final lower = input.toLowerCase();
+    final avoid = allergies.map((allergy) => allergy.toLowerCase()).toSet();
+    final items = <ParsedFoodItem>[];
+
+    for (final entry in foodCatalog) {
+      if (_isAvoided(entry, avoid)) continue;
+      final alias = _bestAlias(lower, entry.aliases);
+      if (alias == null) continue;
+      final quantity = _quantityBeforeAlias(lower, alias) ??
+          _quantityAfterAlias(lower, alias) ??
+          entry.defaultServingQty;
+      items.add(
+        ParsedFoodItem(
+          catalogEntryId: entry.id,
+          displayName: entry.displayName,
+          servingQty: quantity,
+          servingLabel: entry.servingLabel,
+          nutritionPerServing: entry.nutritionPerServing,
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  static String? _bestAlias(String input, List<String> aliases) {
+    final matches = aliases.where((alias) => input.contains(alias)).toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  static bool _isAvoided(FoodCatalogEntry entry, Set<String> avoid) {
+    if (avoid.isEmpty) return false;
+    final text =
+        '${entry.displayName} ${entry.aliases.join(' ')}'.toLowerCase();
+    return avoid.any(text.contains);
+  }
+
+  static double? _quantityBeforeAlias(String input, String alias) {
+    final escaped = RegExp.escape(alias);
+    final match = RegExp(
+      r'(?:^|[\s,])((?:\d+(?:\.\d+)?)|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:large\s+|medium\s+|small\s+)?' +
+          escaped,
+    ).firstMatch(input);
+    return _parseQuantity(match?.group(1));
+  }
+
+  static double? _quantityAfterAlias(String input, String alias) {
+    final escaped = RegExp.escape(alias);
+    final match = RegExp(
+      escaped +
+          r'\s*(?:\(|,)?\s*((?:\d+(?:\.\d+)?)|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s*(?:servings?|cups?|slices?|tbsp|tablespoons?)?',
+    ).firstMatch(input);
+    return _parseQuantity(match?.group(1));
+  }
+
+  static double? _parseQuantity(String? value) {
+    if (value == null) return null;
+    final numeric = double.tryParse(value);
+    if (numeric != null) return numeric;
+    return switch (value) {
+      'a' || 'an' || 'one' => 1,
+      'two' => 2,
+      'three' => 3,
+      'four' => 4,
+      'five' => 5,
+      'six' => 6,
+      'seven' => 7,
+      'eight' => 8,
+      'nine' => 9,
+      'ten' => 10,
+      _ => null,
+    };
   }
 
   static double _matchScore(String input, List<String> keywords) {
@@ -162,12 +249,14 @@ class FoodParser {
 
     if (decoded is! Map<String, dynamic>) {
       throw const FoodParserException(
-          'Remote food parser returned invalid JSON');
+        'Remote food parser returned invalid JSON',
+      );
     }
 
     if (decoded['error'] != null) {
       throw FoodParserException(
-          'Remote food parser failed: ${decoded['error']}');
+        'Remote food parser failed: ${decoded['error']}',
+      );
     }
 
     return NutritionEstimate.fromJson(decoded);
@@ -197,6 +286,187 @@ class _FoodEntry {
   final NutritionEstimate estimate;
   const _FoodEntry(this.keywords, this.estimate);
 }
+
+const foodCatalog = [
+  FoodCatalogEntry(
+    id: 'egg',
+    displayName: 'Egg',
+    aliases: ['egg', 'eggs'],
+    servingLabel: 'large egg',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Egg',
+      grams: 50,
+      carbsG: 0.5,
+      glucoseG: 0.5,
+      fructoseG: 0,
+      fiberG: 0,
+      proteinG: 6.5,
+      fatG: 5,
+      calories: 72,
+      isHighFat: true,
+      micros: MicroNutrients(
+        b12Mcg: 0.55,
+        ironMg: 0.9,
+        zincMg: 0.65,
+        vitaminDIu: 41,
+      ),
+    ),
+    cookingTimeMinutes: 8,
+  ),
+  FoodCatalogEntry(
+    id: 'oatmeal',
+    displayName: 'Oatmeal',
+    aliases: ['oatmeal', 'oats', 'oat', 'porridge'],
+    servingLabel: 'cup cooked',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Oatmeal',
+      grams: 234,
+      carbsG: 27,
+      glucoseG: 22,
+      fructoseG: 1,
+      fiberG: 4,
+      proteinG: 6,
+      fatG: 3,
+      calories: 158,
+      isHighFiber: true,
+      micros: MicroNutrients(magnesiumMg: 57, potassiumMg: 143, ironMg: 2),
+    ),
+    cookingTimeMinutes: 7,
+  ),
+  FoodCatalogEntry(
+    id: 'banana',
+    displayName: 'Banana',
+    aliases: ['banana', 'bananas'],
+    servingLabel: 'medium banana',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Banana',
+      grams: 118,
+      carbsG: 27,
+      glucoseG: 10,
+      fructoseG: 9,
+      fiberG: 3,
+      proteinG: 1,
+      fatG: 0,
+      calories: 105,
+      micros: MicroNutrients(potassiumMg: 422, magnesiumMg: 32),
+    ),
+    cookingTimeMinutes: 0,
+  ),
+  FoodCatalogEntry(
+    id: 'white_rice',
+    displayName: 'White rice',
+    aliases: ['white rice', 'rice'],
+    servingLabel: 'cup cooked',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'White rice',
+      grams: 186,
+      carbsG: 45,
+      glucoseG: 45,
+      fructoseG: 0,
+      fiberG: 1,
+      proteinG: 4,
+      fatG: 0,
+      calories: 206,
+      micros: MicroNutrients(magnesiumMg: 19, potassiumMg: 55),
+    ),
+    cookingTimeMinutes: 20,
+  ),
+  FoodCatalogEntry(
+    id: 'chicken_breast',
+    displayName: 'Chicken breast',
+    aliases: ['chicken breast', 'grilled chicken', 'chicken'],
+    servingLabel: '150g serving',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Chicken breast',
+      grams: 150,
+      carbsG: 0,
+      glucoseG: 0,
+      fructoseG: 0,
+      fiberG: 0,
+      proteinG: 46,
+      fatG: 5,
+      calories: 231,
+      micros: MicroNutrients(zincMg: 2.1, b12Mcg: 0.5, potassiumMg: 448),
+    ),
+    cookingTimeMinutes: 25,
+  ),
+  FoodCatalogEntry(
+    id: 'greek_yogurt',
+    displayName: 'Greek yogurt',
+    aliases: ['greek yogurt', 'yogurt', 'yoghurt', 'dairy'],
+    servingLabel: '200g serving',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Greek yogurt',
+      grams: 200,
+      carbsG: 9,
+      glucoseG: 9,
+      fructoseG: 0,
+      fiberG: 0,
+      proteinG: 20,
+      fatG: 1,
+      calories: 123,
+      micros: MicroNutrients(b12Mcg: 1.5, potassiumMg: 282, zincMg: 1.1),
+    ),
+    cookingTimeMinutes: 0,
+  ),
+  FoodCatalogEntry(
+    id: 'protein_shake',
+    displayName: 'Protein shake',
+    aliases: ['protein shake', 'whey', 'protein powder'],
+    servingLabel: 'shake',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Protein shake',
+      grams: 300,
+      carbsG: 8,
+      glucoseG: 8,
+      fructoseG: 0,
+      fiberG: 1,
+      proteinG: 25,
+      fatG: 2,
+      calories: 150,
+      micros: MicroNutrients(magnesiumMg: 40, zincMg: 2.5, b12Mcg: 1.2),
+    ),
+    cookingTimeMinutes: 2,
+  ),
+  FoodCatalogEntry(
+    id: 'whole_wheat_bread',
+    displayName: 'Whole wheat bread',
+    aliases: ['whole wheat bread', 'whole grain bread', 'bread', 'toast'],
+    servingLabel: '2 slices',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Whole wheat bread',
+      grams: 56,
+      carbsG: 24,
+      glucoseG: 20,
+      fructoseG: 1,
+      fiberG: 3,
+      proteinG: 5,
+      fatG: 1,
+      calories: 124,
+      isHighFiber: true,
+      micros: MicroNutrients(magnesiumMg: 42, ironMg: 2, zincMg: 1.2),
+    ),
+    cookingTimeMinutes: 2,
+  ),
+  FoodCatalogEntry(
+    id: 'sports_drink',
+    displayName: 'Sports drink',
+    aliases: ['sports drink', 'gatorade', 'electrolyte drink'],
+    servingLabel: '16 oz',
+    nutritionPerServing: NutritionEstimate(
+      foodName: 'Sports drink',
+      grams: 480,
+      carbsG: 28,
+      glucoseG: 28,
+      fructoseG: 0,
+      fiberG: 0,
+      proteinG: 0,
+      fatG: 0,
+      calories: 110,
+    ),
+    cookingTimeMinutes: 0,
+  ),
+];
 
 const _foodDatabase = [
   _FoodEntry(
@@ -243,8 +513,12 @@ const _foodDatabase = [
       fatG: 10,
       calories: 143,
       isHighFat: true,
-      micros:
-          MicroNutrients(b12Mcg: 1.1, ironMg: 1.8, zincMg: 1.3, vitaminDIu: 82),
+      micros: MicroNutrients(
+        b12Mcg: 1.1,
+        ironMg: 1.8,
+        zincMg: 1.3,
+        vitaminDIu: 82,
+      ),
     ),
   ),
   _FoodEntry(
@@ -352,7 +626,11 @@ const _foodDatabase = [
       calories: 262,
       isHighFat: true,
       micros: MicroNutrients(
-          b12Mcg: 3.2, vitaminDIu: 570, potassiumMg: 628, zincMg: 0.9),
+        b12Mcg: 3.2,
+        vitaminDIu: 570,
+        potassiumMg: 628,
+        zincMg: 0.9,
+      ),
     ),
   ),
   _FoodEntry(

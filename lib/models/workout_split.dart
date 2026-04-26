@@ -24,6 +24,20 @@ class WorkoutSplit {
       exercises: exercises ?? this.exercises,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
+      };
+
+  factory WorkoutSplit.fromJson(Map<String, dynamic> json) => WorkoutSplit(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        exercises: (json['exercises'] as List? ?? const [])
+            .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
+            .toList(),
+      );
 }
 
 class SplitExercise {
@@ -52,6 +66,20 @@ class SplitExercise {
       reps: reps ?? this.reps,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'muscles': muscles,
+        'sets': sets,
+        'reps': reps,
+      };
+
+  factory SplitExercise.fromJson(Map<String, dynamic> json) => SplitExercise(
+        name: json['name'] as String,
+        muscles: List<String>.from(json['muscles'] as List? ?? const []),
+        sets: json['sets'] as int,
+        reps: json['reps'] as String,
+      );
 }
 
 class ExerciseTemplate {

@@ -49,6 +49,20 @@ void main() {
       expect(result.proteinG, greaterThan(15));
     });
 
+    test('Parses quantity for eggs instead of fixed two-egg serving', () {
+      final result = FoodParser.parseText('3 eggs');
+      expect(result.foodName, '3 eggs');
+      expect(result.proteinG, closeTo(19.5, 0.1));
+      expect(result.calories, closeTo(216, 0.1));
+    });
+
+    test('Aggregates multiple parsed foods', () {
+      final result = FoodParser.parseText('2 eggs and 1 banana');
+      expect(result.proteinG, greaterThan(13));
+      expect(result.carbsG, greaterThan(25));
+      expect(result.calories, greaterThan(240));
+    });
+
     test('Calories are non-zero for real foods', () {
       final foods = ['chicken', 'salmon', 'rice', 'pasta', 'yogurt'];
       for (final f in foods) {

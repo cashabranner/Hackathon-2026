@@ -17,7 +17,8 @@ final _profile = UserProfile(
   createdAt: DateTime(2026),
 );
 
-MetabolicState _baseState(DateTime now, {double liverPct = 0.7, double musclePct = 0.75}) {
+MetabolicState _baseState(DateTime now,
+    {double liverPct = 0.7, double musclePct = 0.75}) {
   final baseline = MetabolicEngine.computeBaseline(_profile);
   return baseline.copyWith(
     asOf: now,
@@ -47,7 +48,8 @@ void main() {
     late FuelPrescription rx;
     setUp(() {
       final now = DateTime(2026, 4, 25, 7, 0);
-      final state = _baseState(now, liverPct: 0.2, musclePct: 0.55); // low stores
+      final state =
+          _baseState(now, liverPct: 0.2, musclePct: 0.55); // low stores
       final session = _session(plannedAt: DateTime(2026, 4, 25, 9, 0));
       rx = PrescriptionEngine.planFuel(state, session);
     });
@@ -127,7 +129,8 @@ void main() {
     late FuelPrescription rx;
     setUp(() {
       final now = DateTime(2026, 4, 25, 11, 0);
-      final state = _baseState(now, liverPct: 0.25, musclePct: 0.15); // critically low
+      final state =
+          _baseState(now, liverPct: 0.25, musclePct: 0.15); // critically low
       final session = _session(
         plannedAt: DateTime(2026, 4, 25, 9, 0), // session was in the past
         durationMinutes: 75,
@@ -162,7 +165,8 @@ void main() {
     setUp(() {
       final now = DateTime(2026, 4, 25, 8, 0);
       final state = _baseState(now);
-      final session = _session(plannedAt: DateTime(2026, 4, 25, 18, 0)); // 10h away
+      final session =
+          _session(plannedAt: DateTime(2026, 4, 25, 18, 0)); // 10h away
       rx = PrescriptionEngine.planFuel(state, session);
     });
 

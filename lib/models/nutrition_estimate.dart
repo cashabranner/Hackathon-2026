@@ -53,8 +53,8 @@ class NutritionEstimate {
   final double grams;
   // Macros
   final double carbsG;
-  final double glucoseG;    // portion of carbs as glucose/starch
-  final double fructoseG;   // portion of carbs as fructose
+  final double glucoseG; // portion of carbs as glucose/starch
+  final double fructoseG; // portion of carbs as fructose
   final double fiberG;
   final double proteinG;
   final double fatG;
@@ -62,8 +62,8 @@ class NutritionEstimate {
   // Micros
   final MicroNutrients micros;
   // Absorption metadata
-  final bool isHighFat;     // slows gastric emptying
-  final bool isHighFiber;   // slows absorption
+  final bool isHighFat; // slows gastric emptying
+  final bool isHighFiber; // slows absorption
 
   const NutritionEstimate({
     required this.foodName,

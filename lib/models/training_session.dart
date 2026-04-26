@@ -1,3 +1,5 @@
+import 'workout_split.dart';
+
 enum SessionType {
   legs,
   upperPush,
@@ -20,6 +22,8 @@ class TrainingSession {
   final String? notes;
   final String? customName;
   final String? customSplitId;
+  final List<SplitExercise> plannedExercises;
+  final List<SplitExercise> completedExercises;
 
   const TrainingSession({
     required this.id,
@@ -31,6 +35,8 @@ class TrainingSession {
     this.notes,
     this.customName,
     this.customSplitId,
+    this.plannedExercises = const [],
+    this.completedExercises = const [],
   });
 
   double get depletionRateGPerMin => switch (intensity) {
@@ -65,6 +71,8 @@ class TrainingSession {
     String? notes,
     String? customName,
     String? customSplitId,
+    List<SplitExercise>? plannedExercises,
+    List<SplitExercise>? completedExercises,
   }) {
     return TrainingSession(
       id: id ?? this.id,
@@ -76,6 +84,8 @@ class TrainingSession {
       notes: notes ?? this.notes,
       customName: customName ?? this.customName,
       customSplitId: customSplitId ?? this.customSplitId,
+      plannedExercises: plannedExercises ?? this.plannedExercises,
+      completedExercises: completedExercises ?? this.completedExercises,
     );
   }
 
@@ -89,6 +99,10 @@ class TrainingSession {
         'notes': notes,
         'custom_name': customName,
         'custom_split_id': customSplitId,
+        'planned_exercises':
+            plannedExercises.map((exercise) => exercise.toJson()).toList(),
+        'completed_exercises':
+            completedExercises.map((exercise) => exercise.toJson()).toList(),
       };
 
   factory TrainingSession.fromJson(Map<String, dynamic> j) => TrainingSession(
@@ -101,5 +115,11 @@ class TrainingSession {
         notes: j['notes'] as String?,
         customName: j['custom_name'] as String?,
         customSplitId: j['custom_split_id'] as String?,
+        plannedExercises: (j['planned_exercises'] as List? ?? const [])
+            .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
+            .toList(),
+        completedExercises: (j['completed_exercises'] as List? ?? const [])
+            .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
+            .toList(),
       );
 }

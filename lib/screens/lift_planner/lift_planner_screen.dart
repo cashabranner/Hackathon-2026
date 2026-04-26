@@ -27,10 +27,7 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
   WorkoutSplit? _selectedSplit;
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _time,
-    );
+    final picked = await showTimePicker(context: context, initialTime: _time);
     if (picked != null) setState(() => _time = picked);
   }
 
@@ -73,6 +70,8 @@ class _LiftPlannerScreenState extends State<LiftPlannerScreen> {
       intensity: _intensity,
       customName: _customSplitMode ? selectedSplit!.name : null,
       customSplitId: _customSplitMode ? selectedSplit!.id : null,
+      plannedExercises:
+          _customSplitMode ? List.of(selectedSplit!.exercises) : const [],
       notes: _customSplitMode
           ? '${selectedSplit!.exercises.length} custom exercises'
           : null,
@@ -333,10 +332,7 @@ class _SessionTypeGrid extends StatelessWidget {
   final SessionType selected;
   final ValueChanged<SessionType> onSelected;
 
-  const _SessionTypeGrid({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _SessionTypeGrid({required this.selected, required this.onSelected});
 
   static const _icons = {
     SessionType.legs: Icons.directions_walk,
@@ -413,10 +409,7 @@ class _IntensityGrid extends StatelessWidget {
   final SessionIntensity selected;
   final ValueChanged<SessionIntensity> onSelected;
 
-  const _IntensityGrid({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _IntensityGrid({required this.selected, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -479,8 +472,10 @@ class _CustomSplitPicker extends StatelessWidget {
           children: [
             const Icon(Icons.fitness_center, color: AppTheme.indigo, size: 36),
             const SizedBox(height: 12),
-            Text('No custom splits yet',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'No custom splits yet',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 6),
             Text(
               'Create one from Workouts > My Splits, then return here to schedule it.',
@@ -497,107 +492,107 @@ class _CustomSplitPicker extends StatelessWidget {
       children: [
         const _SectionLabel('Select Your Split'),
         const SizedBox(height: 12),
-        ...splits.map(
-          (split) {
-            final active = selected?.id == split.id;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: InkWell(
-                onTap: () => onSelected(split),
-                borderRadius: BorderRadius.circular(22),
-                child: AppCard(
-                  color: active ? const Color(0xFFECFDF5) : Colors.white,
-                  borderColor:
-                      active ? AppTheme.emerald : AppTheme.indigoBorder,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(split.name,
-                                style: Theme.of(context).textTheme.titleLarge),
+        ...splits.map((split) {
+          final active = selected?.id == split.id;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: InkWell(
+              onTap: () => onSelected(split),
+              borderRadius: BorderRadius.circular(22),
+              child: AppCard(
+                color: active ? const Color(0xFFECFDF5) : Colors.white,
+                borderColor: active ? AppTheme.emerald : AppTheme.indigoBorder,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            split.name,
+                            style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color:
-                                  active ? AppTheme.teal : Colors.transparent,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color:
-                                    active ? AppTheme.teal : AppTheme.gray200,
-                                width: 2,
-                              ),
-                            ),
-                            child: active
-                                ? Center(
-                                    child: Container(
-                                      width: 7,
-                                      height: 7,
-                                      decoration: const BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  )
-                                : null,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text('${split.exercises.length} exercises',
-                          style: Theme.of(context).textTheme.bodyMedium),
-                      const SizedBox(height: 10),
-                      ...split.exercises.take(4).map(
-                            (exercise) => Padding(
-                              padding: const EdgeInsets.only(bottom: 5),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      exercise.name,
-                                      style: const TextStyle(
-                                          color: AppTheme.gray700),
-                                    ),
-                                  ),
-                                  Text(
-                                    '${exercise.sets} x ${exercise.reps}',
-                                    style: const TextStyle(
-                                      color: AppTheme.gray500,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        ),
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: active ? AppTheme.teal : Colors.transparent,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: active ? AppTheme.teal : AppTheme.gray200,
+                              width: 2,
                             ),
                           ),
-                      if (split.muscles.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: split.muscles
-                              .take(8)
-                              .map(
-                                (muscle) => AppPill(
-                                  label: muscle,
-                                  color: _muscleColor(muscle),
-                                ),
-                              )
-                              .toList(),
+                          child: active
+                              ? Center(
+                                  child: Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                )
+                              : null,
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${split.exercises.length} exercises',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    ...split.exercises.take(4).map(
+                          (exercise) => Padding(
+                            padding: const EdgeInsets.only(bottom: 5),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    exercise.name,
+                                    style: const TextStyle(
+                                      color: AppTheme.gray700,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${exercise.sets} x ${exercise.reps}',
+                                  style: const TextStyle(
+                                    color: AppTheme.gray500,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    if (split.muscles.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: split.muscles
+                            .take(8)
+                            .map(
+                              (muscle) => AppPill(
+                                label: muscle,
+                                color: _muscleColor(muscle),
+                              ),
+                            )
+                            .toList(),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -630,9 +625,10 @@ class _TapTile extends StatelessWidget {
               children: [
                 Icon(icon, color: AppTheme.teal, size: 20),
                 const SizedBox(width: 8),
-                Text(label,
-                    style:
-                        const TextStyle(color: AppTheme.gray600, fontSize: 13)),
+                Text(
+                  label,
+                  style: const TextStyle(color: AppTheme.gray600, fontSize: 13),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -707,10 +703,7 @@ class _UpcomingSessionTile extends StatelessWidget {
   final TrainingSession session;
   final AppState appState;
 
-  const _UpcomingSessionTile({
-    required this.session,
-    required this.appState,
-  });
+  const _UpcomingSessionTile({required this.session, required this.appState});
 
   @override
   Widget build(BuildContext context) {
@@ -733,8 +726,10 @@ class _UpcomingSessionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(session.displayName,
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  session.displayName,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 Text(
                   '${DateFormat('MMM d, h:mm a').format(session.plannedAt)} - ${session.durationMinutes} min',
                   style: Theme.of(context).textTheme.bodyMedium,

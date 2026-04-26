@@ -54,11 +54,13 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
       prompts: [
         _CoachPresetPrompt(
           label: 'Food plan review',
-          prompt: 'Can you review my current food plan and macros for this week?',
+          prompt:
+              'Can you review my current food plan and macros for this week?',
         ),
         _CoachPresetPrompt(
           label: 'Rest vs training',
-          prompt: 'How should I adjust nutrition on rest days vs training days?',
+          prompt:
+              'How should I adjust nutrition on rest days vs training days?',
         ),
       ],
     ),
@@ -532,8 +534,7 @@ class _AssistantMessageContent extends StatelessWidget {
       }
 
       final normalized = line.replaceAll('**', '');
-      final isHeading =
-          (line.startsWith('**') && line.endsWith('**')) ||
+      final isHeading = (line.startsWith('**') && line.endsWith('**')) ||
           (normalized.endsWith(':') && normalized.length <= 80);
       final style = isHeading ? headingStyle : baseStyle;
       final emphasisStyle = isHeading

@@ -1,6 +1,94 @@
 enum BiologicalSex { male, female }
 
-enum ActivityBaseline { sedentary, lightlyActive, moderatelyActive, veryActive, extraActive }
+enum ActivityBaseline {
+  sedentary,
+  lightlyActive,
+  moderatelyActive,
+  veryActive,
+  extraActive,
+}
+
+class FoodPreferences {
+  final List<String> preferredFoods;
+  final List<String> pantryFoods;
+  final List<String> avoidedFoods;
+  final String dietStyle;
+  final int cookingTimePreferenceMinutes;
+
+  const FoodPreferences({
+    this.preferredFoods = const [],
+    this.pantryFoods = const [],
+    this.avoidedFoods = const [],
+    this.dietStyle = 'Balanced',
+    this.cookingTimePreferenceMinutes = 20,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'preferred_foods': preferredFoods,
+        'pantry_foods': pantryFoods,
+        'avoided_foods': avoidedFoods,
+        'diet_style': dietStyle,
+        'cooking_time_preference_minutes': cookingTimePreferenceMinutes,
+      };
+
+  factory FoodPreferences.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const FoodPreferences();
+    return FoodPreferences(
+      preferredFoods: List<String>.from(
+        json['preferred_foods'] as List? ?? const [],
+      ),
+      pantryFoods: List<String>.from(json['pantry_foods'] as List? ?? const []),
+      avoidedFoods: List<String>.from(
+        json['avoided_foods'] as List? ?? const [],
+      ),
+      dietStyle: json['diet_style'] as String? ?? 'Balanced',
+      cookingTimePreferenceMinutes:
+          json['cooking_time_preference_minutes'] as int? ?? 20,
+    );
+  }
+}
+
+class WorkoutPreferences {
+  final int gymDaysPerWeek;
+  final int preferredDurationMinutes;
+  final List<String> preferredWeekdays;
+  final List<String> muscleEmphases;
+  final List<String> preferredExercises;
+
+  const WorkoutPreferences({
+    this.gymDaysPerWeek = 4,
+    this.preferredDurationMinutes = 60,
+    this.preferredWeekdays = const [],
+    this.muscleEmphases = const [],
+    this.preferredExercises = const [],
+  });
+
+  Map<String, dynamic> toJson() => {
+        'gym_days_per_week': gymDaysPerWeek,
+        'preferred_duration_minutes': preferredDurationMinutes,
+        'preferred_weekdays': preferredWeekdays,
+        'muscle_emphases': muscleEmphases,
+        'preferred_exercises': preferredExercises,
+      };
+
+  factory WorkoutPreferences.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const WorkoutPreferences();
+    return WorkoutPreferences(
+      gymDaysPerWeek: json['gym_days_per_week'] as int? ?? 4,
+      preferredDurationMinutes:
+          json['preferred_duration_minutes'] as int? ?? 60,
+      preferredWeekdays: List<String>.from(
+        json['preferred_weekdays'] as List? ?? const [],
+      ),
+      muscleEmphases: List<String>.from(
+        json['muscle_emphases'] as List? ?? const [],
+      ),
+      preferredExercises: List<String>.from(
+        json['preferred_exercises'] as List? ?? const [],
+      ),
+    );
+  }
+}
 
 class UserProfile {
   final String id;
@@ -11,6 +99,8 @@ class UserProfile {
   final double weightKg;
   final ActivityBaseline activityBaseline;
   final List<String> allergies;
+  final FoodPreferences foodPreferences;
+  final WorkoutPreferences workoutPreferences;
   final bool usesGlp1;
   final DateTime createdAt;
 
@@ -23,6 +113,8 @@ class UserProfile {
     required this.weightKg,
     required this.activityBaseline,
     this.allergies = const [],
+    this.foodPreferences = const FoodPreferences(),
+    this.workoutPreferences = const WorkoutPreferences(),
     this.usesGlp1 = false,
     required this.createdAt,
   });
@@ -44,6 +136,8 @@ class UserProfile {
     double? weightKg,
     ActivityBaseline? activityBaseline,
     List<String>? allergies,
+    FoodPreferences? foodPreferences,
+    WorkoutPreferences? workoutPreferences,
     bool? usesGlp1,
     DateTime? createdAt,
   }) {
@@ -56,6 +150,8 @@ class UserProfile {
       weightKg: weightKg ?? this.weightKg,
       activityBaseline: activityBaseline ?? this.activityBaseline,
       allergies: allergies ?? this.allergies,
+      foodPreferences: foodPreferences ?? this.foodPreferences,
+      workoutPreferences: workoutPreferences ?? this.workoutPreferences,
       usesGlp1: usesGlp1 ?? this.usesGlp1,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -70,6 +166,8 @@ class UserProfile {
         'weight_kg': weightKg,
         'activity_baseline': activityBaseline.name,
         'allergies': allergies,
+        'food_preferences': foodPreferences.toJson(),
+        'workout_preferences': workoutPreferences.toJson(),
         'uses_glp1': usesGlp1,
         'created_at': createdAt.toIso8601String(),
       };
@@ -81,9 +179,16 @@ class UserProfile {
         sex: BiologicalSex.values.byName(j['sex'] as String),
         heightCm: (j['height_cm'] as num).toDouble(),
         weightKg: (j['weight_kg'] as num).toDouble(),
-        activityBaseline:
-            ActivityBaseline.values.byName(j['activity_baseline'] as String),
-        allergies: List<String>.from(j['allergies'] as List),
+        activityBaseline: ActivityBaseline.values.byName(
+          j['activity_baseline'] as String,
+        ),
+        allergies: List<String>.from(j['allergies'] as List? ?? const []),
+        foodPreferences: FoodPreferences.fromJson(
+          j['food_preferences'] as Map<String, dynamic>?,
+        ),
+        workoutPreferences: WorkoutPreferences.fromJson(
+          j['workout_preferences'] as Map<String, dynamic>?,
+        ),
         usesGlp1: j['uses_glp1'] as bool? ?? false,
         createdAt: DateTime.parse(j['created_at'] as String),
       );

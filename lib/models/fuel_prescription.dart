@@ -1,7 +1,7 @@
 import 'training_session.dart';
 
 enum PrescriptionTiming {
-  preLift,     // 1–3 hours before
+  preLift, // 1–3 hours before
   immediatelyPre, // 30–60 min before
   duringLift,
   postLift,

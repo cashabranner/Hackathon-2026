@@ -1,8 +1,8 @@
 enum BloodGlucosePhase {
-  fasted,       // <4.0 mmol/L equivalent
-  stable,       // 4.0–5.5 mmol/L
+  fasted, // <4.0 mmol/L equivalent
+  stable, // 4.0–5.5 mmol/L
   postPrandial, // rising after a meal
-  elevated,     // >7.0 mmol/L
+  elevated, // >7.0 mmol/L
 }
 
 enum Glp1Status { notActive, mildlySuppressed, moderatelySuppressed }
@@ -70,8 +70,7 @@ class MetabolicState {
     this.curve = const [],
   });
 
-  double get liverFillPct =>
-      (liverGlycogenG / liverCapacityG).clamp(0.0, 1.0);
+  double get liverFillPct => (liverGlycogenG / liverCapacityG).clamp(0.0, 1.0);
   double get muscleFillPct =>
       (muscleGlycogenG / muscleCapacityG).clamp(0.0, 1.0);
   bool get isLiverLow => liverGlycogenG < liverCapacityG * 0.3;

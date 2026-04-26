@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../config/app_config.dart';
+import '../../models/food_catalog.dart';
 import '../../models/food_log.dart';
 import '../../models/metabolic_state.dart';
 import '../../models/nutrition_estimate.dart';
@@ -47,6 +48,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isAutofilling = false;
   bool _isScanningLabel = false;
   String? _scanLabelStatus;
+  List<ParsedFoodItem> _parsedFoodItems = [];
 
   final _workoutNameCtrl = TextEditingController();
   final _workoutDurationCtrl = TextEditingController(text: '60');
@@ -80,26 +82,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final allergies = context.read<AppState>().profile?.allergies ?? const [];
 
     late NutritionEstimate estimate;
-    var usedRemoteParser = false;
     try {
-      if (AppConfig.hasRemoteFoodParser) {
-        estimate = await FoodParser.parseTextRemote(
-          mealName,
-          AppConfig.foodParserUrl,
-          AppConfig.supabaseAnonKey,
-        );
-        usedRemoteParser = true;
-      } else {
-        estimate = FoodParser.parseText(
-          mealName,
-          allergies: allergies,
-        );
-      }
+      final items = FoodParser.parseTextItems(mealName, allergies: allergies);
+      estimate = items.isEmpty
+          ? FoodParser.parseText(mealName, allergies: allergies)
+          : aggregateParsedFoodItems(items, foodName: mealName);
+      _parsedFoodItems = items;
     } catch (_) {
-      estimate = FoodParser.parseText(
-        mealName,
-        allergies: allergies,
-      );
+      estimate = FoodParser.parseText(mealName, allergies: allergies);
       if (mounted && AppConfig.hasRemoteFoodParser) {
         _showSnack('AI parser unavailable, using local estimate.');
       }
@@ -112,35 +102,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _fatCtrl.text = estimate.fatG.round().toString();
       _isAutofilling = false;
     });
-
-    if (usedRemoteParser) {
-      _showSnack('AI macros filled.');
-    }
   }
 
   Future<void> _addMeal() async {
     final name = _mealNameCtrl.text.trim();
-    final carbs = double.tryParse(_carbsCtrl.text.trim()) ?? 0;
-    final protein = double.tryParse(_proteinCtrl.text.trim()) ?? 0;
-    final fat = double.tryParse(_fatCtrl.text.trim()) ?? 0;
+    final parsedEstimate = _parsedFoodItems.isEmpty
+        ? null
+        : aggregateParsedFoodItems(_parsedFoodItems, foodName: name);
+    final carbs =
+        parsedEstimate?.carbsG ?? double.tryParse(_carbsCtrl.text.trim()) ?? 0;
+    final protein = parsedEstimate?.proteinG ??
+        double.tryParse(_proteinCtrl.text.trim()) ??
+        0;
+    final fat =
+        parsedEstimate?.fatG ?? double.tryParse(_fatCtrl.text.trim()) ?? 0;
     if (name.isEmpty || (carbs + protein + fat) <= 0) {
       _showSnack('Add a meal name and at least one macro.');
       return;
     }
 
-    final estimate = NutritionEstimate(
-      foodName: name,
-      grams: 0,
-      carbsG: carbs,
-      glucoseG: carbs * 0.75,
-      fructoseG: carbs * 0.25,
-      fiberG: 0,
-      proteinG: protein,
-      fatG: fat,
-      calories: carbs * 4 + protein * 4 + fat * 9,
-      isHighFat: fat >= 15,
-      isHighFiber: false,
-    );
+    final estimate = parsedEstimate ??
+        NutritionEstimate(
+          foodName: name,
+          grams: 0,
+          carbsG: carbs,
+          glucoseG: carbs * 0.75,
+          fructoseG: carbs * 0.25,
+          fiberG: 0,
+          proteinG: protein,
+          fatG: fat,
+          calories: carbs * 4 + protein * 4 + fat * 9,
+          isHighFat: fat >= 15,
+          isHighFiber: false,
+        );
 
     await context.read<AppState>().logFood(
           name,
@@ -153,8 +147,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _carbsCtrl.clear();
     _proteinCtrl.clear();
     _fatCtrl.clear();
-    setState(() => _scanLabelStatus = null);
+    setState(() {
+      _scanLabelStatus = null;
+      _parsedFoodItems = [];
+    });
     _showSnack('Meal added.');
+  }
+
+  void _updateParsedFoodItem(int index, double servingQty) {
+    setState(() {
+      _parsedFoodItems[index] = _parsedFoodItems[index].copyWith(
+        servingQty: servingQty.clamp(0.25, 12).toDouble(),
+      );
+      final estimate = aggregateParsedFoodItems(
+        _parsedFoodItems,
+        foodName: _mealNameCtrl.text.trim(),
+      );
+      _carbsCtrl.text = estimate.carbsG.round().toString();
+      _proteinCtrl.text = estimate.proteinG.round().toString();
+      _fatCtrl.text = estimate.fatG.round().toString();
+    });
+  }
+
+  void _useSavedFood(SavedFood food) {
+    setState(() {
+      _mealNameCtrl.text = food.name;
+      _carbsCtrl.text = food.nutrition.carbsG.round().toString();
+      _proteinCtrl.text = food.nutrition.proteinG.round().toString();
+      _fatCtrl.text = food.nutrition.fatG.round().toString();
+      _parsedFoodItems = [];
+      _scanLabelStatus = 'Saved food ready';
+    });
   }
 
   Future<void> _showScanLabelSheet() async {
@@ -171,14 +194,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_camera_outlined,
-                    color: AppTheme.indigo),
+                leading: const Icon(
+                  Icons.photo_camera_outlined,
+                  color: AppTheme.indigo,
+                ),
                 title: const Text('Take Photo'),
                 onTap: () => Navigator.pop(context, ImageSource.camera),
               ),
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined,
-                    color: AppTheme.indigo),
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppTheme.indigo,
+                ),
                 title: const Text('Choose Existing Image'),
                 onTap: () => Navigator.pop(context, ImageSource.gallery),
               ),
@@ -221,10 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _scanLabelStatus = null;
       });
 
-      await _scanSelectedBytes(
-        bytes: image.bytes,
-        mimeType: image.mimeType,
-      );
+      await _scanSelectedBytes(bytes: image.bytes, mimeType: image.mimeType);
     } catch (err) {
       if (mounted) _showErrorSnack('Could not upload image: $err');
     } finally {
@@ -291,6 +315,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _carbsCtrl.text = estimate.carbsG.round().toString();
       _proteinCtrl.text = estimate.proteinG.round().toString();
       _fatCtrl.text = estimate.fatG.round().toString();
+      _parsedFoodItems = [];
       _scanLabelStatus = 'Scanned from label';
     });
     _showSnack('Label scanned. Review before adding.');
@@ -418,11 +443,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             isAutofilling: _isAutofilling,
                             isScanningLabel: _isScanningLabel,
                             scanLabelStatus: _scanLabelStatus,
+                            parsedFoodItems: _parsedFoodItems,
                             onAiChanged: (value) =>
                                 setState(() => _aiAutofill = value),
                             onAddMeal: _addMeal,
                             onAutofill: _autofillMacros,
-                            onMealChanged: (_) => setState(() {}),
+                            onMealChanged: (_) => setState(() {
+                              _parsedFoodItems = [];
+                            }),
+                            onParsedFoodServingChanged: _updateParsedFoodItem,
+                            onSavedFoodTap: _useSavedFood,
                             onScanLabel: _showScanLabelSheet,
                           ),
                         if (_tab == _MainTab.workout)
@@ -440,12 +470,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             appState: state,
                             selectedDate: _selectedDate,
                             onPrevious: () => setState(
-                              () => _selectedDate = _selectedDate
-                                  .subtract(const Duration(days: 1)),
+                              () => _selectedDate = _selectedDate.subtract(
+                                const Duration(days: 1),
+                              ),
                             ),
                             onNext: () => setState(
-                              () => _selectedDate =
-                                  _selectedDate.add(const Duration(days: 1)),
+                              () => _selectedDate = _selectedDate.add(
+                                const Duration(days: 1),
+                              ),
                             ),
                             onToday: () =>
                                 setState(() => _selectedDate = state.now),
@@ -661,16 +693,19 @@ class _MetabolicStateCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Metabolic State',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontSize: 20)),
+          Text(
+            'Metabolic State',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontSize: 20),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(Icons.bolt,
-                  color: _phaseColor(state.bloodGlucosePhase.name)),
+              Icon(
+                Icons.bolt,
+                color: _phaseColor(state.bloodGlucosePhase.name),
+              ),
               const SizedBox(width: 8),
               Text(
                 _phaseLabel(state.bloodGlucosePhase.name),
@@ -755,8 +790,10 @@ class _GlycogenBar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(color: AppTheme.gray600, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(color: AppTheme.gray600, fontSize: 13),
+        ),
         const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
@@ -807,8 +844,10 @@ class _AiCoachCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('AI Coach',
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'AI Coach',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 3),
                   Text(
                     'Recent fuel, glycogen, and training metrics',
@@ -857,8 +896,11 @@ class _WorkoutCard extends StatelessWidget {
                 color: Colors.white.withAlpha(35),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: const Icon(Icons.fitness_center,
-                  color: Colors.white, size: 28),
+              child: const Icon(
+                Icons.fitness_center,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -874,9 +916,13 @@ class _WorkoutCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: const TextStyle(
-                          color: Color(0xFFC7D2FE), fontSize: 13)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFFC7D2FE),
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -892,8 +938,10 @@ class _WorkoutCard extends StatelessWidget {
                   ),
                 ),
                 if (session != null)
-                  const Text('away',
-                      style: TextStyle(color: Color(0xFFC7D2FE), fontSize: 12)),
+                  const Text(
+                    'away',
+                    style: TextStyle(color: Color(0xFFC7D2FE), fontSize: 12),
+                  ),
               ],
             ),
           ],
@@ -929,8 +977,10 @@ class _FuelPrescriptionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Fuel Prescription',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Fuel Prescription',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
               'Plan a lift to get a timed carbohydrate and protein target.',
@@ -956,8 +1006,10 @@ class _FuelPrescriptionCard extends StatelessWidget {
                       children: [
                         const Icon(Icons.bolt, color: AppTheme.teal),
                         const SizedBox(width: 8),
-                        Text('Fuel Prescription',
-                            style: Theme.of(context).textTheme.titleLarge),
+                        Text(
+                          'Fuel Prescription',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -970,8 +1022,10 @@ class _FuelPrescriptionCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(rx.summary,
-                        style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      rx.summary,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ],
                 ),
               ),
@@ -982,8 +1036,10 @@ class _FuelPrescriptionCard extends StatelessWidget {
                   color: const Color(0xFFFBBF24),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child:
-                    const Icon(Icons.fitness_center, color: Color(0xFF78350F)),
+                child: const Icon(
+                  Icons.fitness_center,
+                  color: Color(0xFF78350F),
+                ),
               ),
             ],
           ),
@@ -1014,10 +1070,7 @@ class _FuelPrescriptionCard extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
-            onPressed: onDetails,
-            child: const Text('View details'),
-          ),
+          TextButton(onPressed: onDetails, child: const Text('View details')),
         ],
       ),
     );
@@ -1035,10 +1088,13 @@ class _FoodPage extends StatelessWidget {
   final bool isAutofilling;
   final bool isScanningLabel;
   final String? scanLabelStatus;
+  final List<ParsedFoodItem> parsedFoodItems;
   final ValueChanged<bool> onAiChanged;
   final VoidCallback onAddMeal;
   final VoidCallback onAutofill;
   final ValueChanged<String> onMealChanged;
+  final void Function(int index, double servingQty) onParsedFoodServingChanged;
+  final ValueChanged<SavedFood> onSavedFoodTap;
   final VoidCallback onScanLabel;
 
   const _FoodPage({
@@ -1052,10 +1108,13 @@ class _FoodPage extends StatelessWidget {
     required this.isAutofilling,
     required this.isScanningLabel,
     required this.scanLabelStatus,
+    required this.parsedFoodItems,
     required this.onAiChanged,
     required this.onAddMeal,
     required this.onAutofill,
     required this.onMealChanged,
+    required this.onParsedFoodServingChanged,
+    required this.onSavedFoodTap,
     required this.onScanLabel,
   });
 
@@ -1082,10 +1141,14 @@ class _FoodPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('AI Autofill',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    Text('Automatically estimate macros',
-                        style: Theme.of(context).textTheme.bodyMedium),
+                    Text(
+                      'AI Autofill',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      'Automatically estimate macros',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ],
                 ),
               ),
@@ -1099,6 +1162,35 @@ class _FoodPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (appState.savedFoods.isNotEmpty) ...[
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Saved Foods',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: appState.savedFoods
+                      .map(
+                        (food) => ActionChip(
+                          avatar: const Icon(Icons.add, size: 16),
+                          label: Text(food.name),
+                          onPressed: () => onSavedFoodTap(food),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         AppCard(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -1120,8 +1212,11 @@ class _FoodPage extends StatelessWidget {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    const Icon(Icons.auto_awesome,
-                        color: AppTheme.purple, size: 14),
+                    const Icon(
+                      Icons.auto_awesome,
+                      color: AppTheme.purple,
+                      size: 14,
+                    ),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
@@ -1129,7 +1224,9 @@ class _FoodPage extends StatelessWidget {
                             ? 'AI estimates macros when you finish typing'
                             : 'Local estimate fills macros when you finish typing',
                         style: const TextStyle(
-                            color: AppTheme.purple, fontSize: 12),
+                          color: AppTheme.purple,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -1138,31 +1235,55 @@ class _FoodPage extends StatelessWidget {
               if (isAutofilling) ...[
                 const SizedBox(height: 14),
                 const Center(
-                  child: Text('AI analyzing...',
-                      style: TextStyle(color: AppTheme.purple)),
+                  child: Text(
+                    'AI analyzing...',
+                    style: TextStyle(color: AppTheme.purple),
+                  ),
                 ),
               ],
               if (isScanningLabel) ...[
                 const SizedBox(height: 14),
                 const Center(
-                  child: Text('Scanning label...',
-                      style: TextStyle(color: AppTheme.purple)),
+                  child: Text(
+                    'Scanning label...',
+                    style: TextStyle(color: AppTheme.purple),
+                  ),
                 ),
               ],
               if (scanLabelStatus != null && !isScanningLabel) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.check_circle_outline,
-                        color: AppTheme.teal, size: 15),
+                    const Icon(
+                      Icons.check_circle_outline,
+                      color: AppTheme.teal,
+                      size: 15,
+                    ),
                     const SizedBox(width: 5),
                     Text(
                       scanLabelStatus!,
-                      style:
-                          const TextStyle(color: AppTheme.teal, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppTheme.teal,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
+              ],
+              if (parsedFoodItems.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  'Serving review',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                ...parsedFoodItems.asMap().entries.map(
+                      (entry) => _ParsedFoodRow(
+                        item: entry.value,
+                        onChanged: (qty) =>
+                            onParsedFoodServingChanged(entry.key, qty),
+                      ),
+                    ),
               ],
               const SizedBox(height: 16),
               Row(
@@ -1230,15 +1351,19 @@ class _FoodPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Today's Meals",
-                  style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                "Today's Meals",
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 14),
               if (logs.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: Text('No meals logged yet',
-                        style: TextStyle(color: AppTheme.gray500)),
+                    child: Text(
+                      'No meals logged yet',
+                      style: TextStyle(color: AppTheme.gray500),
+                    ),
                   ),
                 )
               else
@@ -1271,6 +1396,57 @@ class _MacroInput extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         floatingLabelStyle: TextStyle(color: color),
+      ),
+    );
+  }
+}
+
+class _ParsedFoodRow extends StatelessWidget {
+  final ParsedFoodItem item;
+  final ValueChanged<double> onChanged;
+
+  const _ParsedFoodRow({required this.item, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final nutrition = item.nutrition;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.inputFill,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.displayName,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '${nutrition.carbsG.round()}g C - ${nutrition.proteinG.round()}g P - ${nutrition.fatG.round()}g F',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => onChanged(item.servingQty - 0.5),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          Text(
+            '${item.servingQty.toStringAsFixed(item.servingQty % 1 == 0 ? 0 : 1)} ${item.servingLabel}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          IconButton(
+            onPressed: () => onChanged(item.servingQty + 0.5),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
       ),
     );
   }
@@ -1314,13 +1490,17 @@ class _MealTile extends StatelessWidget {
             runSpacing: 8,
             children: [
               AppPill(
-                  label: '${nutrition.carbsG.round()}g C',
-                  color: AppTheme.teal),
+                label: '${nutrition.carbsG.round()}g C',
+                color: AppTheme.teal,
+              ),
               AppPill(
-                  label: '${nutrition.proteinG.round()}g P',
-                  color: AppTheme.amber),
+                label: '${nutrition.proteinG.round()}g P',
+                color: AppTheme.amber,
+              ),
               AppPill(
-                  label: '${nutrition.fatG.round()}g F', color: AppTheme.coral),
+                label: '${nutrition.fatG.round()}g F',
+                color: AppTheme.coral,
+              ),
             ],
           ),
         ],
@@ -1414,15 +1594,19 @@ class _WorkoutPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Recent Workouts',
-                  style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Recent Workouts',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 14),
               if (loggedWorkouts.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: Text('No workouts logged yet',
-                        style: TextStyle(color: AppTheme.gray500)),
+                    child: Text(
+                      'No workouts logged yet',
+                      style: TextStyle(color: AppTheme.gray500),
+                    ),
                   ),
                 )
               else
@@ -1443,9 +1627,10 @@ class _WorkoutPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(workout.name,
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium),
+                              Text(
+                                workout.name,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
                               Text(
                                 '${workout.durationMinutes} min - ${workout.dateLabel}',
                                 style: Theme.of(context).textTheme.bodyMedium,
@@ -1529,8 +1714,10 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
           Row(
             children: [
               Expanded(
-                child: Text('Workout Splits',
-                    style: Theme.of(context).textTheme.titleLarge),
+                child: Text(
+                  'Workout Splits',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
               IconButton(
                 onPressed: () => Navigator.pop(context),
@@ -1607,8 +1794,10 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Text('Exercises',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Exercises',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 if (_draftExercises.isEmpty)
                   AppCard(
@@ -1629,8 +1818,10 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
                         ),
                       ),
                 const SizedBox(height: 18),
-                Text('Add Exercise',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Add Exercise',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 ...exerciseTemplates.map(
                   (template) => Padding(
@@ -1686,8 +1877,10 @@ class _WorkoutSplitsSheetState extends State<_WorkoutSplitsSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Custom Exercise',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'Custom Exercise',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _customExerciseCtrl,
@@ -1864,12 +2057,17 @@ class _EmptySplitsState extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: const Icon(Icons.fitness_center,
-                  color: AppTheme.indigo, size: 30),
+              child: const Icon(
+                Icons.fitness_center,
+                color: AppTheme.indigo,
+                size: 30,
+              ),
             ),
             const SizedBox(height: 14),
-            Text('No splits yet',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'No splits yet',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
             Text(
               'Create your own split with the exercises, sets, and reps you actually use.',
@@ -1912,8 +2110,10 @@ class _SplitSummaryCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(split.name,
-                      style: Theme.of(context).textTheme.titleMedium),
+                  child: Text(
+                    split.name,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
                 IconButton(
                   onPressed: onEdit,
@@ -1926,18 +2126,18 @@ class _SplitSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('${split.exercises.length} exercises',
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              '${split.exercises.length} exercises',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: split.muscles
                   .map(
-                    (muscle) => AppPill(
-                      label: muscle,
-                      color: _muscleColor(muscle),
-                    ),
+                    (muscle) =>
+                        AppPill(label: muscle, color: _muscleColor(muscle)),
                   )
                   .toList(),
             ),
@@ -2003,8 +2203,10 @@ class _EditableExerciseCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(exercise.name,
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      exercise.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
@@ -2033,16 +2235,20 @@ class _EditableExerciseCard extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: [
-                    const Text('Sets',
-                        style: TextStyle(
-                            color: AppTheme.gray600,
-                            fontWeight: FontWeight.w700)),
+                    const Text(
+                      'Sets',
+                      style: TextStyle(
+                        color: AppTheme.gray600,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
                       onPressed: exercise.sets <= 1
                           ? null
                           : () => onChanged(
-                              exercise.copyWith(sets: exercise.sets - 1)),
+                                exercise.copyWith(sets: exercise.sets - 1),
+                              ),
                       icon: const Icon(Icons.remove_circle_outline),
                     ),
                     Text(
@@ -2153,8 +2359,10 @@ class _CalendarPage extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
             child: Column(
               children: [
-                const Text('No events scheduled for this day',
-                    style: TextStyle(color: AppTheme.gray500)),
+                const Text(
+                  'No events scheduled for this day',
+                  style: TextStyle(color: AppTheme.gray500),
+                ),
                 const SizedBox(height: 18),
                 GradientButton(
                   onPressed: onAddEvent,
@@ -2216,12 +2424,15 @@ class _CalendarPage extends StatelessWidget {
 
   void _showEditMealSheet(BuildContext context, FoodLog log) {
     final nameCtrl = TextEditingController(text: log.nutrition.foodName);
-    final carbsCtrl =
-        TextEditingController(text: log.nutrition.carbsG.round().toString());
-    final proteinCtrl =
-        TextEditingController(text: log.nutrition.proteinG.round().toString());
-    final fatCtrl =
-        TextEditingController(text: log.nutrition.fatG.round().toString());
+    final carbsCtrl = TextEditingController(
+      text: log.nutrition.carbsG.round().toString(),
+    );
+    final proteinCtrl = TextEditingController(
+      text: log.nutrition.proteinG.round().toString(),
+    );
+    final fatCtrl = TextEditingController(
+      text: log.nutrition.fatG.round().toString(),
+    );
     var time = TimeOfDay.fromDateTime(log.loggedAt);
 
     showModalBottomSheet<void>(
@@ -2250,8 +2461,10 @@ class _CalendarPage extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('Edit Meal',
-                              style: Theme.of(context).textTheme.titleLarge),
+                          child: Text(
+                            'Edit Meal',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
                         ),
                         IconButton(
                           onPressed: () => Navigator.pop(sheetContext),
@@ -2372,9 +2585,17 @@ class _CalendarPage extends StatelessWidget {
     var selectedSplit = isCustom
         ? _findWorkoutSplit(appState.workoutSplits, session.customSplitId)
         : null;
+    var completedExercises = session.completedExercises.isNotEmpty
+        ? List<SplitExercise>.of(session.completedExercises)
+        : List<SplitExercise>.of(
+            session.plannedExercises.isNotEmpty
+                ? session.plannedExercises
+                : selectedSplit?.exercises ?? const [],
+          );
     var time = TimeOfDay.fromDateTime(session.plannedAt);
-    final durationCtrl =
-        TextEditingController(text: session.durationMinutes.toString());
+    final durationCtrl = TextEditingController(
+      text: session.durationMinutes.toString(),
+    );
 
     showModalBottomSheet<void>(
       context: context,
@@ -2405,8 +2626,10 @@ class _CalendarPage extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text('Edit Workout',
-                                style: Theme.of(context).textTheme.titleLarge),
+                            child: Text(
+                              'Edit Workout',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
                           ),
                           IconButton(
                             onPressed: () => Navigator.pop(sheetContext),
@@ -2440,6 +2663,9 @@ class _CalendarPage extends StatelessWidget {
                                             appState.workoutSplits.isEmpty
                                                 ? null
                                                 : appState.workoutSplits.first;
+                                        completedExercises = List.of(
+                                          selectedSplit?.exercises ?? const [],
+                                        );
                                       });
                                     },
                                   ),
@@ -2451,8 +2677,10 @@ class _CalendarPage extends StatelessWidget {
                               _CalendarSplitPicker(
                                 splits: appState.workoutSplits,
                                 selected: selectedSplit,
-                                onSelected: (split) =>
-                                    setSheetState(() => selectedSplit = split),
+                                onSelected: (split) => setSheetState(() {
+                                  selectedSplit = split;
+                                  completedExercises = List.of(split.exercises);
+                                }),
                               )
                             else
                               _CalendarSessionTypePicker(
@@ -2489,6 +2717,27 @@ class _CalendarPage extends StatelessWidget {
                               icon: const Icon(Icons.access_time),
                               label: Text(time.format(sheetContext)),
                             ),
+                            if (isCustom && completedExercises.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                'Exercises',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              ...completedExercises.asMap().entries.map(
+                                    (entry) => _EditableExerciseCard(
+                                      exercise: entry.value,
+                                      onChanged: (exercise) => setSheetState(
+                                        () => completedExercises[entry.key] =
+                                            exercise,
+                                      ),
+                                      onDelete: () => setSheetState(
+                                        () => completedExercises
+                                            .removeAt(entry.key),
+                                      ),
+                                    ),
+                                  ),
+                            ],
                           ],
                         ),
                       ),
@@ -2522,6 +2771,12 @@ class _CalendarPage extends StatelessWidget {
                               customName: isCustom ? selectedSplit!.name : null,
                               customSplitId:
                                   isCustom ? selectedSplit!.id : null,
+                              plannedExercises: isCustom
+                                  ? List.of(selectedSplit!.exercises)
+                                  : const [],
+                              completedExercises: isCustom
+                                  ? List.of(completedExercises)
+                                  : const [],
                             ),
                           );
                           Navigator.pop(sheetContext);
@@ -2546,8 +2801,9 @@ class _CalendarPage extends StatelessWidget {
         final days = _monthDays(selectedDate);
         return Dialog(
           insetPadding: const EdgeInsets.all(20),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -2708,8 +2964,10 @@ class _SettingsPage extends StatelessWidget {
             children: [
               Text('About', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              const Text('FuelWindow v1.0',
-                  style: TextStyle(color: AppTheme.gray600)),
+              const Text(
+                'FuelWindow v1.0',
+                style: TextStyle(color: AppTheme.gray600),
+              ),
               const SizedBox(height: 4),
               const Text(
                 'Fuel your lifts with informed physiology estimates.',
@@ -2939,19 +3197,25 @@ class _CalendarEventCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(event.name,
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    event.name,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 2),
-                  Text(event.time,
-                      style: Theme.of(context).textTheme.bodyMedium),
+                  Text(
+                    event.time,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                   if (event.pills.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: event.pills
-                          .map((pill) =>
-                              AppPill(label: pill.label, color: pill.color))
+                          .map(
+                            (pill) =>
+                                AppPill(label: pill.label, color: pill.color),
+                          )
                           .toList(),
                     ),
                   ],
@@ -3140,11 +3404,15 @@ class _CalendarSplitPicker extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(split.name,
-                            style: Theme.of(context).textTheme.titleMedium),
+                        Text(
+                          split.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                         const SizedBox(height: 3),
-                        Text('${split.exercises.length} exercises',
-                            style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          '${split.exercises.length} exercises',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                       ],
                     ),
                   ),
@@ -3320,7 +3588,9 @@ List<_CalendarEvent> _eventsFor(AppState state, DateTime date) {
           pills: [
             _EventPill('${log.nutrition.carbsG.round()}g Carbs', AppTheme.teal),
             _EventPill(
-                '${log.nutrition.proteinG.round()}g Protein', AppTheme.amber),
+              '${log.nutrition.proteinG.round()}g Protein',
+              AppTheme.amber,
+            ),
             _EventPill('${log.nutrition.fatG.round()}g Fat', AppTheme.coral),
           ],
         ),
