@@ -139,3 +139,96 @@ npx.cmd -y supabase@latest secrets set OPENAI_API_KEY=<gemini-api-key>
 ```
 
 Never commit `.env` or private API keys.
+
+## 7. Supabase Auth Setup
+
+The app now uses Supabase Auth when `SUPABASE_URL` and `SUPABASE_ANON_KEY` are present. Do not create your own `users` table for passwords. Supabase Auth stores and hashes credentials in its managed `auth.users` system.
+
+In the Supabase dashboard:
+
+1. Open **Authentication > Providers**.
+2. Enable **Email**.
+3. Decide whether **Confirm email** should be on.
+   - For demos, turning it off lets new users sign in immediately.
+   - For production, keep it on and configure email templates/SMTP.
+4. Open **Project Settings > API** and copy:
+   - Project URL into `SUPABASE_URL`
+   - publishable/anon key into `SUPABASE_ANON_KEY`
+5. Keep Row Level Security enabled on app data tables when cloud sync is added.
+
+Suggested starting app-data tables for the next backend step:
+
+```sql
+create table public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  profile_json jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table public.food_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  log_json jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create table public.training_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_json jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+alter table public.food_logs enable row level security;
+alter table public.training_sessions enable row level security;
+
+create policy "Users can read their own profile"
+on public.profiles for select
+using ((select auth.uid()) = id);
+
+create policy "Users can upsert their own profile"
+on public.profiles for insert
+with check ((select auth.uid()) = id);
+
+create policy "Users can update their own profile"
+on public.profiles for update
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
+
+create policy "Users can read their own food logs"
+on public.food_logs for select
+using ((select auth.uid()) = user_id);
+
+create policy "Users can insert their own food logs"
+on public.food_logs for insert
+with check ((select auth.uid()) = user_id);
+
+create policy "Users can update their own food logs"
+on public.food_logs for update
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "Users can delete their own food logs"
+on public.food_logs for delete
+using ((select auth.uid()) = user_id);
+
+create policy "Users can read their own training sessions"
+on public.training_sessions for select
+using ((select auth.uid()) = user_id);
+
+create policy "Users can insert their own training sessions"
+on public.training_sessions for insert
+with check ((select auth.uid()) = user_id);
+
+create policy "Users can update their own training sessions"
+on public.training_sessions for update
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "Users can delete their own training sessions"
+on public.training_sessions for delete
+using ((select auth.uid()) = user_id);
+```
+
+This schema stores app objects as JSON first so the Flutter model can keep moving quickly. Once the product stabilizes, split high-query fields into typed columns.

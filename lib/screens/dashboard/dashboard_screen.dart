@@ -65,7 +65,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _exerciseSetsCtrl = TextEditingController(text: '3');
   final _exerciseRepsCtrl = TextEditingController(text: '8-12');
   final _exerciseNotesCtrl = TextEditingController();
-  final _postWorkoutFeelingCtrl = TextEditingController();
   DateTime? _activeWorkoutStart;
   Timer? _activeWorkoutTimer;
   Duration _activeWorkoutElapsed = Duration.zero;
@@ -94,7 +93,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _exerciseSetsCtrl.dispose();
     _exerciseRepsCtrl.dispose();
     _exerciseNotesCtrl.dispose();
-    _postWorkoutFeelingCtrl.dispose();
     _activeWorkoutTimer?.cancel();
     super.dispose();
   }
@@ -604,7 +602,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showPostWorkoutSummarySheet(TrainingSession session) {
-    _postWorkoutFeelingCtrl.text = session.postWorkoutFeeling ?? '';
+    var feeling = session.postWorkoutFeelingRating ?? 5;
     var intensity = session.postWorkoutIntensity ?? 5;
 
     showModalBottomSheet<void>(
@@ -651,23 +649,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 14),
-                      TextField(
-                        controller: _postWorkoutFeelingCtrl,
-                        minLines: 3,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          labelText: 'How did you feel?',
-                          hintText:
-                              'Energy, soreness, focus, nausea, pump, fatigue...',
+                      Text(
+                        'How you felt: $feeling / 10',
+                        style: const TextStyle(
+                          color: AppTheme.gray700,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 4),
+                      Text(
+                        _feelingRatingLabel(feeling),
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      Slider(
+                        value: feeling.toDouble(),
+                        min: 1,
+                        max: 10,
+                        divisions: 9,
+                        label: feeling.toString(),
+                        onChanged: (value) =>
+                            setSheetState(() => feeling = value.round()),
+                      ),
+                      const SizedBox(height: 12),
                       Text(
                         'Actual intensity: $intensity / 10',
                         style: const TextStyle(
                           color: AppTheme.gray700,
                           fontWeight: FontWeight.w800,
                         ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _intensityRatingLabel(intensity),
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       Slider(
                         value: intensity.toDouble(),
@@ -681,14 +695,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 12),
                       GradientButton(
                         onPressed: () {
-                          final feeling = _postWorkoutFeelingCtrl.text.trim();
-                          if (feeling.isEmpty) {
-                            _showErrorSnack('Add how the workout felt.');
-                            return;
-                          }
                           context.read<AppState>().updateSession(
                                 session.copyWith(
-                                  postWorkoutFeeling: feeling,
+                                  postWorkoutFeelingRating: feeling,
                                   postWorkoutIntensity: intensity,
                                   postWorkoutSummaryAt: DateTime.now(),
                                 ),
@@ -707,6 +716,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       },
     );
+  }
+
+  String _feelingRatingLabel(int rating) {
+    if (rating <= 3) return 'Rough recovery';
+    if (rating <= 5) return 'Okay, but taxed';
+    if (rating <= 7) return 'Solid';
+    if (rating <= 9) return 'Strong';
+    return 'Excellent';
+  }
+
+  String _intensityRatingLabel(int rating) {
+    if (rating <= 3) return 'Light effort';
+    if (rating <= 5) return 'Moderate effort';
+    if (rating <= 7) return 'Hard effort';
+    if (rating <= 9) return 'Very hard effort';
+    return 'Max effort';
   }
 
   @override
@@ -888,6 +913,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onReset: () {
                               context.read<AppState>().clearDemo();
                               context.go('/onboarding');
+                            },
+                            onSignOut: () async {
+                              await context.read<AppState>().signOut();
+                              if (context.mounted) context.go('/login');
                             },
                           ),
                       ],
@@ -2730,10 +2759,21 @@ class _WorkoutPage extends StatelessWidget {
                                   ),
                                   if (workout.hasPostWorkoutSummary) ...[
                                     const SizedBox(height: 6),
-                                    AppPill(
-                                      label:
-                                          'Felt ${workout.postWorkoutIntensity}/10',
-                                      color: AppTheme.teal,
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: [
+                                        AppPill(
+                                          label:
+                                              'Felt ${workout.postWorkoutFeelingRating}/10',
+                                          color: AppTheme.teal,
+                                        ),
+                                        AppPill(
+                                          label:
+                                              'Intensity ${workout.postWorkoutIntensity}/10',
+                                          color: AppTheme.coral,
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ],
@@ -4108,6 +4148,8 @@ class _CalendarPage extends StatelessWidget {
                                   ? List.of(completedExercises)
                                   : const [],
                               postWorkoutFeeling: session.postWorkoutFeeling,
+                              postWorkoutFeelingRating:
+                                  session.postWorkoutFeelingRating,
                               postWorkoutIntensity:
                                   session.postWorkoutIntensity,
                               postWorkoutSummaryAt:
@@ -4282,6 +4324,12 @@ class _WeeklySummaryPage extends StatelessWidget {
                 .map((session) => session.postWorkoutIntensity!)
                 .reduce((a, b) => a + b) /
             summaryWorkouts.length;
+    final avgFeeling = summaryWorkouts.isEmpty
+        ? null
+        : summaryWorkouts
+                .map((session) => session.postWorkoutFeelingRating!)
+                .reduce((a, b) => a + b) /
+            summaryWorkouts.length;
     final totalCalories = meals.fold<double>(
       0,
       (sum, log) => sum + log.nutrition.calories,
@@ -4299,6 +4347,7 @@ class _WeeklySummaryPage extends StatelessWidget {
       workouts: workouts,
       summaries: summaryWorkouts,
       avgIntensity: avgIntensity,
+      avgFeeling: avgFeeling,
       avgCalories: avgCalories,
       avgProtein: avgProtein,
       plannedWorkouts: plannedWorkouts,
@@ -4331,10 +4380,10 @@ class _WeeklySummaryPage extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   _WeeklyMetricTile(
-                    label: 'Avg kcal',
-                    value: avgCalories.round().toString(),
-                    detail: 'per day',
-                    color: AppTheme.gray700,
+                    label: 'Summaries',
+                    value: '${summaryWorkouts.length}',
+                    detail: 'of ${workouts.length}',
+                    color: AppTheme.teal,
                   ),
                 ],
               ),
@@ -4342,12 +4391,23 @@ class _WeeklySummaryPage extends StatelessWidget {
               Row(
                 children: [
                   _WeeklyMetricTile(
+                    label: 'Avg kcal',
+                    value: avgCalories.round().toString(),
+                    detail: 'per day',
+                    color: AppTheme.gray700,
+                  ),
+                  const SizedBox(width: 8),
+                  _WeeklyMetricTile(
                     label: 'Avg protein',
                     value: '${avgProtein.round()}g',
                     detail: 'per day',
                     color: AppTheme.amber,
                   ),
-                  const SizedBox(width: 8),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
                   _WeeklyMetricTile(
                     label: 'Intensity',
                     value: avgIntensity == null
@@ -4355,6 +4415,15 @@ class _WeeklySummaryPage extends StatelessWidget {
                         : avgIntensity.toStringAsFixed(1),
                     detail: 'post-workout',
                     color: AppTheme.coral,
+                  ),
+                  const SizedBox(width: 8),
+                  _WeeklyMetricTile(
+                    label: 'Felt',
+                    value: avgFeeling == null
+                        ? '--'
+                        : avgFeeling.toStringAsFixed(1),
+                    detail: 'post-workout',
+                    color: AppTheme.teal,
                   ),
                 ],
               ),
@@ -4385,6 +4454,7 @@ class _WeeklySummaryPage extends StatelessWidget {
     required List<TrainingSession> workouts,
     required List<TrainingSession> summaries,
     required double? avgIntensity,
+    required double? avgFeeling,
     required double avgCalories,
     required double avgProtein,
     required int plannedWorkouts,
@@ -4416,6 +4486,18 @@ class _WeeklySummaryPage extends StatelessWidget {
         workouts.isNotEmpty) {
       recommendations.add(
         'Workouts felt manageable; consider a small progression in load, sets, or session density.',
+      );
+    }
+    if (avgFeeling != null && avgFeeling <= 4) {
+      recommendations.add(
+        'Post-workout feeling is low; protect recovery with easier loading, sleep, hydration, or a recovery meal.',
+      );
+    } else if (avgFeeling != null &&
+        avgFeeling >= 8 &&
+        avgIntensity != null &&
+        avgIntensity <= 7) {
+      recommendations.add(
+        'You felt strong after training; consider a small progression next week if soreness stays controlled.',
       );
     }
     if (tdee > 0 && avgCalories < tdee * 0.8) {
@@ -4510,11 +4592,13 @@ class _SettingsPage extends StatelessWidget {
   final AppState appState;
   final VoidCallback onEditProfile;
   final VoidCallback onReset;
+  final Future<void> Function() onSignOut;
 
   const _SettingsPage({
     required this.appState,
     required this.onEditProfile,
     required this.onReset,
+    required this.onSignOut,
   });
 
   @override
@@ -4568,6 +4652,22 @@ class _SettingsPage extends StatelessWidget {
                 style: TextStyle(color: AppTheme.gray500, fontSize: 12),
               ),
               const SizedBox(height: 18),
+              if (appState.authEnabled) ...[
+                OutlinedButton(
+                  onPressed: onSignOut,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.indigo,
+                    side: BorderSide(color: AppTheme.indigo.withAlpha(120)),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: Text(
+                    appState.authUserEmail == null
+                        ? 'Sign Out'
+                        : 'Sign Out (${appState.authUserEmail})',
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               OutlinedButton(
                 onPressed: onReset,
                 style: OutlinedButton.styleFrom(
@@ -5294,8 +5394,13 @@ List<_CalendarEvent> _eventsFor(AppState state, DateTime date) {
               pills: [
                 if (session.hasPostWorkoutSummary)
                   _EventPill(
-                    'Felt ${session.postWorkoutIntensity}/10',
+                    'Felt ${session.postWorkoutFeelingRating}/10',
                     AppTheme.teal,
+                  ),
+                if (session.hasPostWorkoutSummary)
+                  _EventPill(
+                    'Intensity ${session.postWorkoutIntensity}/10',
+                    AppTheme.coral,
                   )
                 else if (session.postWorkoutSummaryDue(state.now))
                   const _EventPill('Summary Due', AppTheme.amber),

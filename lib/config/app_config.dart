@@ -38,8 +38,17 @@ class AppConfig {
   static bool get hasRemoteFoodParser =>
       foodParserUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
+  static bool get hasSupabase =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
   static bool get hasCoachChat =>
       coachChatUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
-  static String _env(String key) => dotenv.maybeGet(key) ?? '';
+  static String _env(String key) {
+    try {
+      return dotenv.maybeGet(key) ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
 }

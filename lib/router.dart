@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import 'repositories/app_state.dart';
+import 'screens/auth/auth_screen.dart';
 import 'screens/coach_chat/coach_chat_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/food_log/food_log_screen.dart';
@@ -12,15 +13,28 @@ GoRouter buildRouter(AppState appState) {
   return GoRouter(
     initialLocation: '/onboarding',
     redirect: (context, state) {
+      final authEnabled = appState.authEnabled;
+      final isAuthenticated = appState.isAuthenticated;
       final hasProfile = appState.hasProfile;
+      final isAuth = state.matchedLocation.startsWith('/login');
       final isOnboarding = state.matchedLocation.startsWith('/onboarding');
       final isEditingProfile = state.uri.queryParameters['edit'] == 'true';
+
+      if (authEnabled && !isAuthenticated && !isAuth) return '/login';
+      if (authEnabled && isAuthenticated && isAuth) {
+        return hasProfile ? '/dashboard' : '/onboarding';
+      }
+
       if (!hasProfile && !isOnboarding) return '/onboarding';
       if (hasProfile && isOnboarding && !isEditingProfile) return '/dashboard';
       return null;
     },
     refreshListenable: appState,
     routes: [
+      GoRoute(
+        path: '/login',
+        builder: (ctx, state) => const AuthScreen(),
+      ),
       GoRoute(
         path: '/onboarding',
         builder: (ctx, state) => const OnboardingScreen(),

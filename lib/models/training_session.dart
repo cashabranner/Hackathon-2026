@@ -25,6 +25,7 @@ class TrainingSession {
   final List<SplitExercise> plannedExercises;
   final List<SplitExercise> completedExercises;
   final String? postWorkoutFeeling;
+  final int? postWorkoutFeelingRating;
   final int? postWorkoutIntensity;
   final DateTime? postWorkoutSummaryAt;
 
@@ -41,6 +42,7 @@ class TrainingSession {
     this.plannedExercises = const [],
     this.completedExercises = const [],
     this.postWorkoutFeeling,
+    this.postWorkoutFeelingRating,
     this.postWorkoutIntensity,
     this.postWorkoutSummaryAt,
   });
@@ -56,8 +58,7 @@ class TrainingSession {
       depletionRateGPerMin * durationMinutes;
 
   bool get hasPostWorkoutSummary =>
-      postWorkoutFeeling?.trim().isNotEmpty == true &&
-      postWorkoutIntensity != null;
+      postWorkoutFeelingRating != null && postWorkoutIntensity != null;
 
   bool postWorkoutSummaryDue(DateTime now) {
     final reminderAt = plannedAt.add(const Duration(hours: 2));
@@ -89,6 +90,7 @@ class TrainingSession {
     List<SplitExercise>? plannedExercises,
     List<SplitExercise>? completedExercises,
     String? postWorkoutFeeling,
+    int? postWorkoutFeelingRating,
     int? postWorkoutIntensity,
     DateTime? postWorkoutSummaryAt,
     bool clearPostWorkoutSummary = false,
@@ -108,6 +110,9 @@ class TrainingSession {
       postWorkoutFeeling: clearPostWorkoutSummary
           ? null
           : postWorkoutFeeling ?? this.postWorkoutFeeling,
+      postWorkoutFeelingRating: clearPostWorkoutSummary
+          ? null
+          : postWorkoutFeelingRating ?? this.postWorkoutFeelingRating,
       postWorkoutIntensity: clearPostWorkoutSummary
           ? null
           : postWorkoutIntensity ?? this.postWorkoutIntensity,
@@ -132,6 +137,7 @@ class TrainingSession {
         'completed_exercises':
             completedExercises.map((exercise) => exercise.toJson()).toList(),
         'post_workout_feeling': postWorkoutFeeling,
+        'post_workout_feeling_rating': postWorkoutFeelingRating,
         'post_workout_intensity': postWorkoutIntensity,
         'post_workout_summary_at': postWorkoutSummaryAt?.toIso8601String(),
       };
@@ -153,6 +159,8 @@ class TrainingSession {
             .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
             .toList(),
         postWorkoutFeeling: j['post_workout_feeling'] as String?,
+        postWorkoutFeelingRating:
+            (j['post_workout_feeling_rating'] as num?)?.toInt(),
         postWorkoutIntensity: (j['post_workout_intensity'] as num?)?.toInt(),
         postWorkoutSummaryAt: j['post_workout_summary_at'] == null
             ? null

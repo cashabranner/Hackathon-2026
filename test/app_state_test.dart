@@ -88,7 +88,7 @@ void main() {
 
       state.updateSession(
         session.copyWith(
-          postWorkoutFeeling: 'Strong finish, mild soreness.',
+          postWorkoutFeelingRating: 8,
           postWorkoutIntensity: 7,
           postWorkoutSummaryAt: state.now,
         ),

@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/app_config.dart';
 import '../demo/demo_accounts.dart';
 import '../models/food_catalog.dart';
 import '../models/food_log.dart';
@@ -32,11 +34,15 @@ class AppState extends ChangeNotifier {
   FuelPrescription? _prescription;
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
+  StreamSubscription<AuthState>? _authSubscription;
+  String? _authUserId;
+  String? _authUserEmail;
   bool _isHydrated = false;
   bool _pendingGreeting = false;
   bool _isDemoMode = false;
 
   AppState() {
+    _startAuthListener();
     _startClock();
   }
 
@@ -54,6 +60,12 @@ class AppState extends ChangeNotifier {
   bool get pendingGreeting => _pendingGreeting;
   bool get isDemoMode => _isDemoMode;
   bool get hasProfile => _profile != null;
+  bool get authEnabled => AppConfig.hasSupabase;
+  bool get isAuthenticated => !authEnabled || _authUserId != null;
+  String? get authUserEmail => _authUserEmail;
+
+  String get _activeStorageKey =>
+      _authUserId == null ? _storageKey : '${_storageKey}_$_authUserId';
 
   TrainingSession? get nextSession {
     final upcoming = _sessions.where((s) => s.plannedAt.isAfter(_now)).toList()
@@ -70,8 +82,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadPersistedState() async {
+    if (authEnabled && _authUserId == null) {
+      _clearLocalState();
+      _now = DateTime.now();
+      _isHydrated = true;
+      notifyListeners();
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
+    final raw = prefs.getString(_activeStorageKey);
+    _clearLocalState();
     if (raw != null) {
       final json = jsonDecode(raw) as Map<String, dynamic>;
       _profile = json['profile'] == null
@@ -101,7 +122,7 @@ class AppState extends ChangeNotifier {
   Future<void> persistState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _storageKey,
+      _activeStorageKey,
       jsonEncode({
         'profile': _profile?.toJson(),
         'food_logs': _foodLogs.map((log) => log.toJson()).toList(),
@@ -118,6 +139,41 @@ class AppState extends ChangeNotifier {
     unawaited(persistState());
   }
 
+  Future<void> signInWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    final response = await Supabase.instance.client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    _setAuthUser(response.session?.user ?? response.user);
+    await loadPersistedState();
+  }
+
+  Future<bool> signUpWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    final response = await Supabase.instance.client.auth.signUp(
+      email: email,
+      password: password,
+    );
+    _setAuthUser(response.session?.user);
+    if (response.session != null) {
+      await loadPersistedState();
+    }
+    return response.session == null;
+  }
+
+  Future<void> signOut() async {
+    if (!authEnabled) return;
+    await Supabase.instance.client.auth.signOut();
+    _setAuthUser(null);
+    _clearLocalState();
+    notifyListeners();
+  }
+
   void consumeGreeting() {
     if (!_pendingGreeting) return;
     _pendingGreeting = false;
@@ -127,7 +183,7 @@ class AppState extends ChangeNotifier {
   // ─── Onboarding ──────────────────────────────────────────────────────────
 
   void saveProfile(UserProfile profile) {
-    _profile = profile;
+    _profile = _withAuthUserId(profile);
     _isDemoMode = false;
     _pendingGreeting = false;
     addWorkoutPresetsFromPreferences(notify: false);
@@ -137,7 +193,7 @@ class AppState extends ChangeNotifier {
   }
 
   void updateProfile(UserProfile profile) {
-    _profile = profile;
+    _profile = _withAuthUserId(profile);
     addWorkoutPresetsFromPreferences(notify: false);
     _recompute();
     _persistState();
@@ -164,13 +220,7 @@ class AppState extends ChangeNotifier {
 
   void clearDemo() {
     _isDemoMode = false;
-    _profile = null;
-    _foodLogs = [];
-    _savedFoods = [];
-    _sessions = [];
-    _workoutSplits = [];
-    _prescription = null;
-    _metabolicState = null;
+    _clearLocalState();
     _now = DateTime.now();
     _persistState();
     notifyListeners();
@@ -424,9 +474,48 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  void _startAuthListener() {
+    if (!authEnabled) return;
+    final auth = Supabase.instance.client.auth;
+    _setAuthUser(auth.currentUser);
+    _authSubscription = auth.onAuthStateChange.listen((data) {
+      final previousUserId = _authUserId;
+      _setAuthUser(data.session?.user);
+      if (previousUserId != _authUserId) {
+        unawaited(loadPersistedState());
+      } else {
+        notifyListeners();
+      }
+    });
+  }
+
+  void _setAuthUser(User? user) {
+    _authUserId = user?.id;
+    _authUserEmail = user?.email;
+  }
+
+  UserProfile _withAuthUserId(UserProfile profile) {
+    final authUserId = _authUserId;
+    if (authUserId == null) return profile;
+    return profile.copyWith(id: authUserId);
+  }
+
+  void _clearLocalState() {
+    _profile = null;
+    _foodLogs = [];
+    _savedFoods = [];
+    _sessions = [];
+    _workoutSplits = [];
+    _prescription = null;
+    _metabolicState = null;
+    _pendingGreeting = false;
+    _isDemoMode = false;
+  }
+
   @override
   void dispose() {
     _clockTimer?.cancel();
+    unawaited(_authSubscription?.cancel());
     super.dispose();
   }
 }
