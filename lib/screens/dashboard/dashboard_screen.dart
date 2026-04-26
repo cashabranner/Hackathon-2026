@@ -83,14 +83,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     late NutritionEstimate estimate;
     try {
-      final items = FoodParser.parseTextItems(mealName, allergies: allergies);
-      estimate = items.isEmpty
-          ? FoodParser.parseText(mealName, allergies: allergies)
-          : aggregateParsedFoodItems(items, foodName: mealName);
-      _parsedFoodItems = items;
+      if (AppConfig.hasRemoteFoodParser) {
+        estimate = await FoodParser.parseTextRemote(
+          mealName,
+          AppConfig.foodParserUrl,
+          AppConfig.supabaseAnonKey,
+        );
+        _parsedFoodItems = [];
+      } else {
+        final items = FoodParser.parseTextItems(mealName, allergies: allergies);
+        estimate = items.isEmpty
+            ? FoodParser.parseText(mealName, allergies: allergies)
+            : aggregateParsedFoodItems(items, foodName: mealName);
+        _parsedFoodItems = items;
+      }
     } catch (_) {
       estimate = FoodParser.parseText(mealName, allergies: allergies);
-      if (mounted && AppConfig.hasRemoteFoodParser) {
+      _parsedFoodItems = [];
+      if (mounted) {
         _showSnack('AI parser unavailable, using local estimate.');
       }
     }
@@ -878,7 +888,7 @@ class _WorkoutCard extends StatelessWidget {
         ? 'Schedule a workout'
         : '${session.durationMinutes} min - ${session.intensity.name} intensity';
     final timeLabel =
-        session == null ? '+' : _hoursUntil(session, appState.now);
+        session == null ? '+' : _timeUntil(session.plannedAt, appState.now);
 
     return InkWell(
       onTap: onTap,
@@ -937,7 +947,7 @@ class _WorkoutCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (session != null)
+                if (session != null && timeLabel != 'Now')
                   const Text(
                     'away',
                     style: TextStyle(color: Color(0xFFC7D2FE), fontSize: 12),
@@ -950,11 +960,21 @@ class _WorkoutCard extends StatelessWidget {
     );
   }
 
-  String _hoursUntil(TrainingSession session, DateTime now) {
-    final minutes = session.plannedAt.difference(now).inMinutes;
+  String _timeUntil(DateTime plannedAt, DateTime now) {
+    final minutes = plannedAt.difference(now).inMinutes;
     if (minutes <= 0) return 'Now';
     if (minutes < 60) return '${minutes}m';
-    return '${(minutes / 60).toStringAsFixed(1)}h';
+    if (minutes < 24 * 60) {
+      final hours = minutes ~/ 60;
+      final remainingMinutes = minutes % 60;
+      if (remainingMinutes == 0) return '${hours}h';
+      return '${hours}h ${remainingMinutes}m';
+    }
+
+    final days = minutes ~/ (24 * 60);
+    final remainingHours = (minutes % (24 * 60)) ~/ 60;
+    if (remainingHours == 0) return '${days}d';
+    return '${days}d ${remainingHours}h';
   }
 }
 

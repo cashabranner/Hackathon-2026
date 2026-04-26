@@ -81,7 +81,28 @@ void main() {
     });
   });
 
-  group('FoodParser remote image parsing', () {
+  group('FoodParser remote parsing', () {
+    test('Sends text payload and parses remote nutrition response', () async {
+      Map<String, dynamic>? sentPayload;
+      final client = MockClient((request) async {
+        sentPayload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(request.headers['apikey'], 'anon-key');
+        expect(request.headers['Authorization'], 'Bearer anon-key');
+        return http.Response(jsonEncode(_nutritionJson()), 200);
+      });
+
+      final result = await FoodParser.parseTextRemote(
+        'turkey sandwich and apple',
+        'https://example.test/functions/v1/food-parser',
+        'anon-key',
+        client: client,
+      );
+
+      expect(sentPayload, {'description': 'turkey sandwich and apple'});
+      expect(result.foodName, 'Granola Bar');
+      expect(result.carbsG, 24);
+    });
+
     test('Builds image request payload with base64 bytes and MIME type', () {
       final payload = FoodParser.buildRemoteRequestBody(
         imageBytes: [1, 2, 3, 4],
@@ -100,6 +121,25 @@ void main() {
           imageBytes:
               List.filled(FoodParser.maxNutritionLabelImageBytes + 1, 0),
           mimeType: 'image/jpeg',
+        ),
+        throwsA(isA<FoodParserException>()),
+      );
+    });
+
+    test('Accepts HEIC images for Gemini nutrition label scanning', () {
+      final payload = FoodParser.buildRemoteRequestBody(
+        imageBytes: [1, 2, 3],
+        mimeType: 'image/heic',
+      );
+
+      expect(payload['mime_type'], 'image/heic');
+    });
+
+    test('Rejects unsupported nutrition label image MIME types', () {
+      expect(
+        () => FoodParser.buildRemoteRequestBody(
+          imageBytes: [1, 2, 3],
+          mimeType: 'image/gif',
         ),
         throwsA(isA<FoodParserException>()),
       );

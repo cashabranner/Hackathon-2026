@@ -2,8 +2,7 @@
 // Deploy: supabase functions deploy food-parser --no-verify-jwt
 //
 // Request  POST /functions/v1/food-parser
-// Requires Edge Function secret: OPENAI_API_KEY
-// The secret value is treated as a Gemini API key.
+// Requires Edge Function secret: GEMINI_API_KEY
 // Body: { "description"?: string, "image_base64"?: string, "mime_type"?: string }
 //
 // Response:
@@ -38,6 +37,13 @@ const corsHeaders = {
 };
 
 const maxImageBytes = 8 * 1024 * 1024;
+const supportedImageMimeTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
 
 const nutritionSchema = {
   type: "object",
@@ -127,9 +133,16 @@ serve(async (req) => {
       const normalized = normalizeImageBase64(imageBase64Raw);
       imageBase64 = normalized.base64;
       mimeType = mimeType || normalized.mimeType;
+      mimeType = normalizeMimeType(mimeType);
 
       if (!mimeType || !mimeType.startsWith("image/")) {
         return jsonResponse({ error: "mime_type must be an image MIME type" }, 400);
+      }
+      if (!supportedImageMimeTypes.has(mimeType)) {
+        return jsonResponse({
+          error: "unsupported image type",
+          detail: "Use JPEG, PNG, WEBP, HEIC, or HEIF.",
+        }, 415);
       }
       if (!isBase64(imageBase64)) {
         return jsonResponse({ error: "image_base64 must be valid base64 image data" }, 400);
@@ -139,9 +152,9 @@ serve(async (req) => {
       }
     }
 
-    const geminiKey = Deno.env.get("OPENAI_API_KEY") ?? Deno.env.get("OPEN_AI_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY");
     if (!geminiKey) {
-      return jsonResponse({ error: "Gemini API key secret not set" }, 500);
+      return jsonResponse({ error: "GEMINI_API_KEY secret not set" }, 500);
     }
 
     const prompt = imageBase64
@@ -195,10 +208,19 @@ Be as accurate as possible using USDA FoodData Central values. If multiple foods
 
     const aiResult = await response.json();
     if (!response.ok) {
+      const detail = aiResult.error?.message ?? aiResult;
+      if (response.status === 400 && String(detail).toLowerCase().includes("api key")) {
+        return jsonResponse({
+          error: "Gemini API key is invalid",
+          detail:
+            "Check the Supabase Edge Function secret named GEMINI_API_KEY. It must be a Google AI Studio/Gemini API key, not the Supabase anon key or an OpenAI key.",
+        }, 502);
+      }
+
       return jsonResponse({
         error: "Gemini request failed",
         status: response.status,
-        detail: aiResult.error?.message ?? aiResult,
+        detail,
       }, 502);
     }
 
@@ -243,6 +265,11 @@ function normalizeImageBase64(raw: string): { base64: string; mimeType: string }
   }
 
   return { mimeType: "", base64: raw.replace(/\s/g, "") };
+}
+
+function normalizeMimeType(mimeType: string): string {
+  const normalized = mimeType.trim().toLowerCase();
+  return normalized === "image/jpg" ? "image/jpeg" : normalized;
 }
 
 function isBase64(value: string): boolean {

@@ -26,20 +26,27 @@ class CoachChatService {
     required Map<String, dynamic> metrics,
     required List<CoachChatMessage> messages,
   }) async {
-    final response = await http.post(
-      Uri.parse(coachChatUrl),
-      headers: {
-        'Content-Type': 'application/json',
-        if (anonKey.isNotEmpty) 'apikey': anonKey,
-        if (anonKey.isNotEmpty) 'Authorization': 'Bearer $anonKey',
-      },
-      body: jsonEncode({
-        'metrics': metrics,
-        'messages': messages.map((message) => message.toJson()).toList(),
-      }),
-    );
+    late final http.Response response;
+    try {
+      response = await http
+          .post(
+            Uri.parse(coachChatUrl),
+            headers: {
+              'Content-Type': 'application/json',
+              if (anonKey.isNotEmpty) 'apikey': anonKey,
+              if (anonKey.isNotEmpty) 'Authorization': 'Bearer $anonKey',
+            },
+            body: jsonEncode({
+              'metrics': metrics,
+              'messages': messages.map((message) => message.toJson()).toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 25));
+    } catch (err) {
+      throw CoachChatException('Coach request could not be reached: $err');
+    }
 
-    final decoded = jsonDecode(response.body);
+    final decoded = _decodeResponse(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map<String, dynamic>
           ? decoded['detail'] ?? decoded['error'] ?? decoded
@@ -57,6 +64,20 @@ class CoachChatService {
     }
 
     return reply.trim();
+  }
+
+  static dynamic _decodeResponse(String body) {
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      final preview = body.trim();
+      throw CoachChatException(
+        preview.isEmpty
+            ? 'Coach returned an empty response'
+            : 'Coach returned invalid JSON: '
+                '${preview.length > 120 ? '${preview.substring(0, 120)}...' : preview}',
+      );
+    }
   }
 }
 

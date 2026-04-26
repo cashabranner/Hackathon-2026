@@ -10,6 +10,13 @@ import '../models/nutrition_estimate.dart';
 /// credentials are present, the real implementation can delegate there.
 class FoodParser {
   static const int maxNutritionLabelImageBytes = 8 * 1024 * 1024;
+  static const Set<String> supportedNutritionLabelMimeTypes = {
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  };
 
   /// Parse free-text food description; returns best-effort local estimate.
   static NutritionEstimate parseText(
@@ -167,12 +174,14 @@ class FoodParser {
   static Future<NutritionEstimate> parseTextRemote(
     String input,
     String edgeFunctionUrl,
-    String anonKey,
-  ) {
+    String anonKey, {
+    http.Client? client,
+  }) {
     return _parseRemote(
       buildRemoteRequestBody(description: input),
       edgeFunctionUrl,
       anonKey,
+      client: client,
     );
   }
 
@@ -209,9 +218,14 @@ class FoodParser {
         );
       }
 
-      final normalizedMimeType = mimeType?.trim().toLowerCase();
+      final normalizedMimeType = _normalizeNutritionLabelMimeType(mimeType);
       if (normalizedMimeType == null || normalizedMimeType.isEmpty) {
         throw const FoodParserException('Image MIME type is required.');
+      }
+      if (!isSupportedNutritionLabelMimeType(normalizedMimeType)) {
+        throw const FoodParserException(
+          'Unsupported image type. Use a JPEG, PNG, WEBP, HEIC, or HEIF nutrition label.',
+        );
       }
 
       payload['image_base64'] = base64Encode(imageBytes);
@@ -219,6 +233,18 @@ class FoodParser {
     }
 
     return payload;
+  }
+
+  static bool isSupportedNutritionLabelMimeType(String mimeType) {
+    return supportedNutritionLabelMimeTypes.contains(
+      _normalizeNutritionLabelMimeType(mimeType),
+    );
+  }
+
+  static String? _normalizeNutritionLabelMimeType(String? mimeType) {
+    final normalized = mimeType?.trim().toLowerCase();
+    if (normalized == 'image/jpg') return 'image/jpeg';
+    return normalized;
   }
 
   static Future<NutritionEstimate> _parseRemote(
@@ -235,9 +261,18 @@ class FoodParser {
     };
 
     final body = jsonEncode(payload);
-    final response = client == null
-        ? await http.post(uri, headers: headers, body: body)
-        : await client.post(uri, headers: headers, body: body);
+    late final http.Response response;
+    try {
+      response = await (client == null
+              ? http.post(uri, headers: headers, body: body)
+              : client.post(uri, headers: headers, body: body))
+          .timeout(const Duration(seconds: 25));
+    } on FoodParserException {
+      rethrow;
+    } catch (err) {
+      throw FoodParserException(
+          'Remote food parser could not be reached: $err');
+    }
 
     final decoded = _decodeResponse(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -266,7 +301,13 @@ class FoodParser {
     try {
       return jsonDecode(body);
     } catch (_) {
-      throw FoodParserException('Remote food parser returned invalid JSON');
+      final preview = body.trim();
+      throw FoodParserException(
+        preview.isEmpty
+            ? 'Remote food parser returned an empty response'
+            : 'Remote food parser returned invalid JSON: '
+                '${preview.length > 120 ? '${preview.substring(0, 120)}...' : preview}',
+      );
     }
   }
 }

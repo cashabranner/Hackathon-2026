@@ -2,8 +2,7 @@
 // Deploy: supabase functions deploy coach-chat --no-verify-jwt
 //
 // Request  POST /functions/v1/coach-chat
-// Requires Edge Function secret: OPENAI_API_KEY
-// The secret value is treated as a Gemini API key.
+// Requires Edge Function secret: GEMINI_API_KEY
 // Body: { metrics: object, messages: [{ role: "user" | "assistant", content: string }] }
 // Response: { "reply": string }
 
@@ -28,9 +27,9 @@ serve(async (req) => {
       );
     }
 
-    const geminiKey = Deno.env.get("OPENAI_API_KEY") ?? Deno.env.get("OPEN_AI_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY");
     if (!geminiKey) {
-      return jsonResponse({ error: "Gemini API key secret not set" }, 500);
+      return jsonResponse({ error: "GEMINI_API_KEY secret not set" }, 500);
     }
 
     const prompt = buildPrompt(metrics, messages);
@@ -62,11 +61,23 @@ serve(async (req) => {
 
     const aiResult = await response.json();
     if (!response.ok) {
+      const detail = aiResult.error?.message ?? aiResult;
+      if (response.status === 400 && String(detail).toLowerCase().includes("api key")) {
+        return jsonResponse(
+          {
+            error: "Gemini API key is invalid",
+            detail:
+              "Check the Supabase Edge Function secret named GEMINI_API_KEY. It must be a Google AI Studio/Gemini API key, not the Supabase anon key or an OpenAI key.",
+          },
+          502,
+        );
+      }
+
       return jsonResponse(
         {
           error: "Gemini request failed",
           status: response.status,
-          detail: aiResult.error?.message ?? aiResult,
+          detail,
         },
         502,
       );

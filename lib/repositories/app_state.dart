@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../demo/demo_accounts.dart';
@@ -26,6 +28,11 @@ class AppState extends ChangeNotifier {
   FuelPrescription? _prescription;
   DateTime _now = DateTime.now();
   bool _isDemoMode = false;
+  Timer? _clockTimer;
+
+  AppState() {
+    _startClock();
+  }
 
   // ─── Getters ─────────────────────────────────────────────────────────────
 
@@ -58,12 +65,26 @@ class AppState extends ChangeNotifier {
   // ─── Demo mode ───────────────────────────────────────────────────────────
 
   void loadDemoAccount(DemoAccount demo) {
+    final realNow = DateTime.now();
+    final demoNow = demo.now;
+    final demoSession = demo.session;
+
     _isDemoMode = true;
     _profile = demo.profile;
-    _foodLogs = demo.foodLogs;
+    _foodLogs = demo.foodLogs
+        .map(
+          (log) => log.copyWith(
+            loggedAt: realNow.add(log.loggedAt.difference(demoNow)),
+          ),
+        )
+        .toList();
     _savedFoods = [];
-    _sessions = [demo.session];
-    _now = demo.now;
+    _sessions = [
+      demoSession.copyWith(
+        plannedAt: realNow.add(demoSession.plannedAt.difference(demoNow)),
+      ),
+    ];
+    _now = realNow;
     _recompute();
     notifyListeners();
   }
@@ -251,5 +272,22 @@ class AppState extends ChangeNotifier {
     _now = _now.add(delta);
     _recompute();
     notifyListeners();
+  }
+
+  void _startClock() {
+    _clockTimer?.cancel();
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final nextNow = DateTime.now();
+      if (nextNow.difference(_now).inSeconds.abs() < 30) return;
+      _now = nextNow;
+      _recompute();
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 }
