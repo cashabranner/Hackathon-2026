@@ -27,7 +27,7 @@ import '../../widgets/app_ui.dart';
 import '../../widgets/glycogen_chart.dart';
 import '../../widgets/macro_totals_card.dart';
 
-enum _MainTab { home, food, workout, calendar, settings }
+enum _MainTab { home, food, workout, weekly, calendar, settings }
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -65,6 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _exerciseSetsCtrl = TextEditingController(text: '3');
   final _exerciseRepsCtrl = TextEditingController(text: '8-12');
   final _exerciseNotesCtrl = TextEditingController();
+  final _postWorkoutFeelingCtrl = TextEditingController();
   DateTime? _activeWorkoutStart;
   Timer? _activeWorkoutTimer;
   Duration _activeWorkoutElapsed = Duration.zero;
@@ -93,6 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _exerciseSetsCtrl.dispose();
     _exerciseRepsCtrl.dispose();
     _exerciseNotesCtrl.dispose();
+    _postWorkoutFeelingCtrl.dispose();
     _activeWorkoutTimer?.cancel();
     super.dispose();
   }
@@ -551,18 +553,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final name = _workoutNameCtrl.text.trim().isEmpty
         ? 'Workout'
         : _workoutNameCtrl.text.trim();
-    context.read<AppState>().addSession(
-          TrainingSession(
-            id: 'workout-${const Uuid().v4()}',
-            userId: profile.id,
-            type: SessionType.fullBody,
-            plannedAt: finishedAt.subtract(Duration(minutes: elapsedMinutes)),
-            durationMinutes: elapsedMinutes,
-            intensity: _activeWorkoutIntensity,
-            customName: name,
-            completedExercises: _activeWorkoutExercises,
-          ),
-        );
+    final session = TrainingSession(
+      id: 'workout-${const Uuid().v4()}',
+      userId: profile.id,
+      type: SessionType.fullBody,
+      plannedAt: finishedAt.subtract(Duration(minutes: elapsedMinutes)),
+      durationMinutes: elapsedMinutes,
+      intensity: _activeWorkoutIntensity,
+      customName: name,
+      completedExercises: _activeWorkoutExercises,
+    );
+    context.read<AppState>().addSession(session);
     _activeWorkoutTimer?.cancel();
     setState(() {
       _activeWorkoutStart = null;
@@ -571,15 +572,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _workoutNameCtrl.clear();
       _workoutDurationCtrl.text = '60';
     });
-    _showSnack('Workout saved.');
+    _showPostWorkoutSummarySheet(session);
   }
 
   void _showSnack(String message) {
+    final media = MediaQuery.of(context);
+    var bottomMargin = media.size.height - media.padding.top - 92;
+    if (bottomMargin < 16) bottomMargin = 16;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: AppTheme.teal,
         behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: bottomMargin,
+        ),
       ),
     );
   }
@@ -591,6 +600,112 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: AppTheme.coral,
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  void _showPostWorkoutSummarySheet(TrainingSession session) {
+    _postWorkoutFeelingCtrl.text = session.postWorkoutFeeling ?? '';
+    var intensity = session.postWorkoutIntensity ?? 5;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  8,
+                  20,
+                  20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'How You Felt After Workout',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        session.displayName,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _postWorkoutFeelingCtrl,
+                        minLines: 3,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'How did you feel?',
+                          hintText:
+                              'Energy, soreness, focus, nausea, pump, fatigue...',
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Actual intensity: $intensity / 10',
+                        style: const TextStyle(
+                          color: AppTheme.gray700,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Slider(
+                        value: intensity.toDouble(),
+                        min: 1,
+                        max: 10,
+                        divisions: 9,
+                        label: intensity.toString(),
+                        onChanged: (value) =>
+                            setSheetState(() => intensity = value.round()),
+                      ),
+                      const SizedBox(height: 12),
+                      GradientButton(
+                        onPressed: () {
+                          final feeling = _postWorkoutFeelingCtrl.text.trim();
+                          if (feeling.isEmpty) {
+                            _showErrorSnack('Add how the workout felt.');
+                            return;
+                          }
+                          context.read<AppState>().updateSession(
+                                session.copyWith(
+                                  postWorkoutFeeling: feeling,
+                                  postWorkoutIntensity: intensity,
+                                  postWorkoutSummaryAt: DateTime.now(),
+                                ),
+                              );
+                          Navigator.pop(sheetContext);
+                          _showSnack('Post-workout summary saved.');
+                        },
+                        child: const Text('Save Summary'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -638,6 +753,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       sessions: state.sessions,
       profile: profile,
     );
+    final pendingPostWorkoutSummary = state.pendingPostWorkoutSummary;
 
     return Scaffold(
       body: GradientShell(
@@ -659,6 +775,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       children: [
+                        if (pendingPostWorkoutSummary != null) ...[
+                          _PostWorkoutSummaryReminder(
+                            session: pendingPostWorkoutSummary,
+                            onTap: () => _showPostWorkoutSummarySheet(
+                              pendingPostWorkoutSummary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         if (_tab == _MainTab.home)
                           _HomePage(
                             state: state,
@@ -730,8 +855,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onIntensityChanged: (intensity) => setState(
                               () => _activeWorkoutIntensity = intensity,
                             ),
+                            onSummary: _showPostWorkoutSummarySheet,
                             onSplits: _showSplitsSheet,
                           ),
+                        if (_tab == _MainTab.weekly)
+                          _WeeklySummaryPage(appState: state),
                         if (_tab == _MainTab.calendar)
                           _CalendarPage(
                             appState: state,
@@ -908,6 +1036,66 @@ class _Header extends StatelessWidget {
               ),
               child: const Text('DEMO'),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PostWorkoutSummaryReminder extends StatelessWidget {
+  final TrainingSession session;
+  final VoidCallback onTap;
+
+  const _PostWorkoutSummaryReminder({
+    required this.session,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      gradient: const LinearGradient(
+        colors: [Color(0xFFECFDF5), Color(0xFFE0F2FE)],
+      ),
+      borderColor: AppTheme.teal,
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(150),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.notifications_active_outlined,
+                color: AppTheme.teal),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Post-workout summary due',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '${session.displayName} needs how you felt + actual intensity.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 42),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+            ),
+            child: const Text('Fill Out'),
+          ),
         ],
       ),
     );
@@ -2408,6 +2596,7 @@ class _WorkoutPage extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onFinish;
   final ValueChanged<SessionIntensity> onIntensityChanged;
+  final ValueChanged<TrainingSession> onSummary;
   final VoidCallback onSplits;
 
   const _WorkoutPage({
@@ -2429,6 +2618,7 @@ class _WorkoutPage extends StatelessWidget {
     required this.onCancel,
     required this.onFinish,
     required this.onIntensityChanged,
+    required this.onSummary,
     required this.onSplits,
   });
 
@@ -2538,11 +2728,24 @@ class _WorkoutPage extends StatelessWidget {
                                     style:
                                         Theme.of(context).textTheme.bodyMedium,
                                   ),
+                                  if (workout.hasPostWorkoutSummary) ...[
+                                    const SizedBox(height: 6),
+                                    AppPill(
+                                      label:
+                                          'Felt ${workout.postWorkoutIntensity}/10',
+                                      color: AppTheme.teal,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
-                            const Icon(Icons.check_circle,
-                                color: AppTheme.teal),
+                            workout.hasPostWorkoutSummary
+                                ? const Icon(Icons.check_circle,
+                                    color: AppTheme.teal)
+                                : TextButton(
+                                    onPressed: () => onSummary(workout),
+                                    child: const Text('Add Summary'),
+                                  ),
                           ],
                         ),
                       ),
@@ -3904,6 +4107,11 @@ class _CalendarPage extends StatelessWidget {
                               completedExercises: isCustom
                                   ? List.of(completedExercises)
                                   : const [],
+                              postWorkoutFeeling: session.postWorkoutFeeling,
+                              postWorkoutIntensity:
+                                  session.postWorkoutIntensity,
+                              postWorkoutSummaryAt:
+                                  session.postWorkoutSummaryAt,
                             ),
                           );
                           Navigator.pop(sheetContext);
@@ -4042,6 +4250,259 @@ class _CalendarPage extends StatelessWidget {
     final first = DateTime(date.year, date.month);
     final start = first.subtract(Duration(days: first.weekday % 7));
     return List.generate(42, (index) => start.add(Duration(days: index)));
+  }
+}
+
+class _WeeklySummaryPage extends StatelessWidget {
+  final AppState appState;
+
+  const _WeeklySummaryPage({required this.appState});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = appState.now;
+    final weekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final meals = appState.foodLogs
+        .where((log) =>
+            !log.loggedAt.isBefore(weekStart) && log.loggedAt.isBefore(weekEnd))
+        .toList();
+    final workouts = appState.sessions
+        .where((session) =>
+            !session.plannedAt.isBefore(weekStart) &&
+            session.plannedAt.isBefore(weekEnd) &&
+            !session.plannedAt.isAfter(now))
+        .toList();
+    final summaryWorkouts =
+        workouts.where((session) => session.hasPostWorkoutSummary).toList();
+    final avgIntensity = summaryWorkouts.isEmpty
+        ? null
+        : summaryWorkouts
+                .map((session) => session.postWorkoutIntensity!)
+                .reduce((a, b) => a + b) /
+            summaryWorkouts.length;
+    final totalCalories = meals.fold<double>(
+      0,
+      (sum, log) => sum + log.nutrition.calories,
+    );
+    final totalProtein = meals.fold<double>(
+      0,
+      (sum, log) => sum + log.nutrition.proteinG,
+    );
+    final daysElapsed = now.difference(weekStart).inDays.clamp(0, 6) + 1;
+    final avgCalories = totalCalories / daysElapsed;
+    final avgProtein = totalProtein / daysElapsed;
+    final profile = appState.profile;
+    final plannedWorkouts = profile?.workoutPreferences.gymDaysPerWeek ?? 4;
+    final recommendations = _weeklyRecommendations(
+      workouts: workouts,
+      summaries: summaryWorkouts,
+      avgIntensity: avgIntensity,
+      avgCalories: avgCalories,
+      avgProtein: avgProtein,
+      plannedWorkouts: plannedWorkouts,
+      tdee: appState.metabolicState?.tdeeKcal ?? 0,
+      proteinTarget: (appState.metabolicState?.leanBodyMassKg ?? 0) * 2,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Weekly Summary',
+            style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 16),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d').format(weekEnd.subtract(const Duration(days: 1)))}',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _WeeklyMetricTile(
+                    label: 'Workouts',
+                    value: '${workouts.length}',
+                    detail: 'goal $plannedWorkouts',
+                    color: AppTheme.indigo,
+                  ),
+                  const SizedBox(width: 8),
+                  _WeeklyMetricTile(
+                    label: 'Avg kcal',
+                    value: avgCalories.round().toString(),
+                    detail: 'per day',
+                    color: AppTheme.gray700,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _WeeklyMetricTile(
+                    label: 'Avg protein',
+                    value: '${avgProtein.round()}g',
+                    detail: 'per day',
+                    color: AppTheme.amber,
+                  ),
+                  const SizedBox(width: 8),
+                  _WeeklyMetricTile(
+                    label: 'Intensity',
+                    value: avgIntensity == null
+                        ? '--'
+                        : avgIntensity.toStringAsFixed(1),
+                    detail: 'post-workout',
+                    color: AppTheme.coral,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Recommended Changes',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              ...recommendations.map(
+                (recommendation) => _WeeklyRecommendationRow(
+                  text: recommendation,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<String> _weeklyRecommendations({
+    required List<TrainingSession> workouts,
+    required List<TrainingSession> summaries,
+    required double? avgIntensity,
+    required double avgCalories,
+    required double avgProtein,
+    required int plannedWorkouts,
+    required double tdee,
+    required double proteinTarget,
+  }) {
+    final recommendations = <String>[];
+    final missingSummaries = workouts.length - summaries.length;
+    if (missingSummaries > 0) {
+      recommendations.add(
+        'Fill out $missingSummaries post-workout ${missingSummaries == 1 ? 'summary' : 'summaries'} so next week adapts to how training actually felt.',
+      );
+    }
+    if (workouts.length < plannedWorkouts) {
+      recommendations.add(
+        'Plan ${plannedWorkouts - workouts.length} more workout ${plannedWorkouts - workouts.length == 1 ? 'slot' : 'slots'} or lower the weekly target.',
+      );
+    } else if (workouts.length > plannedWorkouts + 1) {
+      recommendations.add(
+        'Add a recovery day or lower intensity next week; volume is above your stated plan.',
+      );
+    }
+    if (avgIntensity != null && avgIntensity >= 8) {
+      recommendations.add(
+        'Average post-workout intensity is high; bias toward one easier session or more carbs around training.',
+      );
+    } else if (avgIntensity != null &&
+        avgIntensity <= 4 &&
+        workouts.isNotEmpty) {
+      recommendations.add(
+        'Workouts felt manageable; consider a small progression in load, sets, or session density.',
+      );
+    }
+    if (tdee > 0 && avgCalories < tdee * 0.8) {
+      recommendations.add(
+        'Calories are trending low versus maintenance; add a pre- or post-workout snack on training days.',
+      );
+    }
+    if (proteinTarget > 0 && avgProtein < proteinTarget * 0.8) {
+      recommendations.add(
+        'Protein is below target; add a lean protein serving to one meal daily.',
+      );
+    }
+    if (recommendations.isEmpty) {
+      recommendations.add(
+        'Stay the course. Training, recovery feedback, and nutrition are aligned this week.',
+      );
+    }
+    return recommendations;
+  }
+}
+
+class _WeeklyMetricTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final String detail;
+  final Color color;
+
+  const _WeeklyMetricTile({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withAlpha(18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withAlpha(70)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    color: AppTheme.gray600,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(value,
+                style: TextStyle(
+                    color: color, fontSize: 24, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            Text(detail,
+                style: const TextStyle(color: AppTheme.gray500, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeeklyRecommendationRow extends StatelessWidget {
+  final String text;
+
+  const _WeeklyRecommendationRow({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.arrow_circle_up_outlined,
+              color: AppTheme.teal, size: 19),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -4300,6 +4761,14 @@ class _BottomNav extends StatelessWidget {
             icon: Icons.monitor_heart_outlined,
             activeIcon: Icons.monitor_heart,
             label: 'Workout',
+            onSelected: onSelected,
+          ),
+          _NavItem(
+            tab: _MainTab.weekly,
+            current: current,
+            icon: Icons.insights_outlined,
+            activeIcon: Icons.insights,
+            label: 'Weekly',
             onSelected: onSelected,
           ),
           _NavItem(
@@ -4822,6 +5291,15 @@ List<_CalendarEvent> _eventsFor(AppState state, DateTime date) {
               color: AppTheme.indigo,
               gradient: AppTheme.indigoGradient,
               session: session,
+              pills: [
+                if (session.hasPostWorkoutSummary)
+                  _EventPill(
+                    'Felt ${session.postWorkoutIntensity}/10',
+                    AppTheme.teal,
+                  )
+                else if (session.postWorkoutSummaryDue(state.now))
+                  const _EventPill('Summary Due', AppTheme.amber),
+              ],
             ),
           );
 

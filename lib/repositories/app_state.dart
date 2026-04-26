@@ -61,6 +61,14 @@ class AppState extends ChangeNotifier {
     return upcoming.isEmpty ? null : upcoming.first;
   }
 
+  TrainingSession? get pendingPostWorkoutSummary {
+    final due = _sessions
+        .where((session) => session.postWorkoutSummaryDue(_now))
+        .toList()
+      ..sort((a, b) => a.plannedAt.compareTo(b.plannedAt));
+    return due.isEmpty ? null : due.first;
+  }
+
   Future<void> loadPersistedState() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_storageKey);

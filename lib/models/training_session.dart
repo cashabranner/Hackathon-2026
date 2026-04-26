@@ -24,6 +24,9 @@ class TrainingSession {
   final String? customSplitId;
   final List<SplitExercise> plannedExercises;
   final List<SplitExercise> completedExercises;
+  final String? postWorkoutFeeling;
+  final int? postWorkoutIntensity;
+  final DateTime? postWorkoutSummaryAt;
 
   const TrainingSession({
     required this.id,
@@ -37,6 +40,9 @@ class TrainingSession {
     this.customSplitId,
     this.plannedExercises = const [],
     this.completedExercises = const [],
+    this.postWorkoutFeeling,
+    this.postWorkoutIntensity,
+    this.postWorkoutSummaryAt,
   });
 
   double get depletionRateGPerMin => switch (intensity) {
@@ -48,6 +54,15 @@ class TrainingSession {
 
   double get estimatedMuscleGlycogenCostG =>
       depletionRateGPerMin * durationMinutes;
+
+  bool get hasPostWorkoutSummary =>
+      postWorkoutFeeling?.trim().isNotEmpty == true &&
+      postWorkoutIntensity != null;
+
+  bool postWorkoutSummaryDue(DateTime now) {
+    final reminderAt = plannedAt.add(const Duration(hours: 2));
+    return !hasPostWorkoutSummary && !now.isBefore(reminderAt);
+  }
 
   String get displayName =>
       customName ??
@@ -73,6 +88,10 @@ class TrainingSession {
     String? customSplitId,
     List<SplitExercise>? plannedExercises,
     List<SplitExercise>? completedExercises,
+    String? postWorkoutFeeling,
+    int? postWorkoutIntensity,
+    DateTime? postWorkoutSummaryAt,
+    bool clearPostWorkoutSummary = false,
   }) {
     return TrainingSession(
       id: id ?? this.id,
@@ -86,6 +105,15 @@ class TrainingSession {
       customSplitId: customSplitId ?? this.customSplitId,
       plannedExercises: plannedExercises ?? this.plannedExercises,
       completedExercises: completedExercises ?? this.completedExercises,
+      postWorkoutFeeling: clearPostWorkoutSummary
+          ? null
+          : postWorkoutFeeling ?? this.postWorkoutFeeling,
+      postWorkoutIntensity: clearPostWorkoutSummary
+          ? null
+          : postWorkoutIntensity ?? this.postWorkoutIntensity,
+      postWorkoutSummaryAt: clearPostWorkoutSummary
+          ? null
+          : postWorkoutSummaryAt ?? this.postWorkoutSummaryAt,
     );
   }
 
@@ -103,6 +131,9 @@ class TrainingSession {
             plannedExercises.map((exercise) => exercise.toJson()).toList(),
         'completed_exercises':
             completedExercises.map((exercise) => exercise.toJson()).toList(),
+        'post_workout_feeling': postWorkoutFeeling,
+        'post_workout_intensity': postWorkoutIntensity,
+        'post_workout_summary_at': postWorkoutSummaryAt?.toIso8601String(),
       };
 
   factory TrainingSession.fromJson(Map<String, dynamic> j) => TrainingSession(
@@ -121,5 +152,10 @@ class TrainingSession {
         completedExercises: (j['completed_exercises'] as List? ?? const [])
             .map((item) => SplitExercise.fromJson(item as Map<String, dynamic>))
             .toList(),
+        postWorkoutFeeling: j['post_workout_feeling'] as String?,
+        postWorkoutIntensity: (j['post_workout_intensity'] as num?)?.toInt(),
+        postWorkoutSummaryAt: j['post_workout_summary_at'] == null
+            ? null
+            : DateTime.parse(j['post_workout_summary_at'] as String),
       );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuelwindow/demo/demo_accounts.dart';
 import 'package:fuelwindow/models/nutrition_estimate.dart';
+import 'package:fuelwindow/models/training_session.dart';
 import 'package:fuelwindow/repositories/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -66,6 +67,36 @@ void main() {
       expect(restored.workoutSplits, isNotEmpty);
     } finally {
       restored.dispose();
+    }
+  });
+
+  test('Tracks pending post-workout summaries after the two hour reminder', () {
+    final state = AppState();
+    try {
+      final session = TrainingSession(
+        id: 'session-1',
+        userId: 'user-1',
+        type: SessionType.fullBody,
+        plannedAt: state.now.subtract(const Duration(hours: 3)),
+        durationMinutes: 60,
+        intensity: SessionIntensity.moderate,
+      );
+
+      state.addSession(session);
+
+      expect(state.pendingPostWorkoutSummary?.id, session.id);
+
+      state.updateSession(
+        session.copyWith(
+          postWorkoutFeeling: 'Strong finish, mild soreness.',
+          postWorkoutIntensity: 7,
+          postWorkoutSummaryAt: state.now,
+        ),
+      );
+
+      expect(state.pendingPostWorkoutSummary, isNull);
+    } finally {
+      state.dispose();
     }
   });
 }
